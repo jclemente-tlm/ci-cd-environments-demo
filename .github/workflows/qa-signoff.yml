@@ -21,12 +21,15 @@ permissions:
   contents: read
 
 jobs:
-  signoff:
-    name: Registrar aprobación funcional
+  validate-candidate:
+    name: Validar candidato y evidencia técnica
     runs-on: ubuntu-latest
-    environment: qa-approval
+    outputs:
+      smoke_run_id: ${{ steps.validate.outputs.smoke_run_id }}
+      version: ${{ steps.validate.outputs.version }}
     steps:
       - name: Validate release candidate and QA smoke evidence
+        id: validate
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -61,15 +64,42 @@ jobs:
           test "$(jq -r '.conclusion' <<< "$SMOKE_RUN_JSON")" = "success"
 
           VERSION="0.1.0-$CI_RUN_ID"
-          printf '%s\n' \
-            "commit=$COMMIT_SHA" \
-            "version=$VERSION" \
-            "branch=main" \
-            "ci_run=$CI_RUN_ID" \
-            "qa_cd_run=$SMOKE_RUN_ID" \
-            "signoff_run=${{ github.run_id }}" \
-            "requested_by=${{ github.actor }}" \
-            "test_reference=$TEST_REFERENCE" > qa-signoff.txt
+          echo "smoke_run_id=$SMOKE_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  signoff:
+    name: Registrar aprobación funcional
+    needs: validate-candidate
+    runs-on: ubuntu-latest
+    environment: qa-signoff
+    steps:
+      - name: Record approved functional sign-off
+        env:
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          TEST_REFERENCE: ${{ inputs.test_reference }}
+          SMOKE_RUN_ID: ${{ needs.validate-candidate.outputs.smoke_run_id }}
+          VERSION: ${{ needs.validate-candidate.outputs.version }}
+        run: |
+          jq -n \
+            --arg commit_sha "$COMMIT_SHA" \
+            --arg version "$VERSION" \
+            --arg branch "main" \
+            --arg ci_run_id "$CI_RUN_ID" \
+            --arg qa_cd_run_id "$SMOKE_RUN_ID" \
+            --arg signoff_run_id "${{ github.run_id }}" \
+            --arg requested_by "${{ github.actor }}" \
+            --arg test_reference "$TEST_REFERENCE" \
+            '{
+              commit_sha: $commit_sha,
+              version: $version,
+              branch: $branch,
+              ci_run_id: $ci_run_id,
+              qa_cd_run_id: $qa_cd_run_id,
+              signoff_run_id: $signoff_run_id,
+              requested_by: $requested_by,
+              test_reference: $test_reference
+            }' > qa-signoff.json
 
           {
             echo "## QA functional sign-off"
@@ -81,13 +111,13 @@ jobs:
             echo "| QA CD run | $SMOKE_RUN_ID |"
             echo "| Test reference | $TEST_REFERENCE |"
             echo "| Requested by | ${{ github.actor }} |"
-            echo "| Environment | qa-approval |"
+            echo "| Environment | qa-signoff |"
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Record functional QA sign-off
+      - name: Upload functional QA sign-off
         uses: actions/upload-artifact@v4
         with:
           name: qa-signoff-${{ inputs.commit_sha }}-${{ inputs.ci_run_id }}
-          path: qa-signoff.txt
+          path: qa-signoff.json
           if-no-files-found: error
           retention-days: 30
           overwrite: true

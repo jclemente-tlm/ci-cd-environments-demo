@@ -25,7 +25,7 @@ Se mantendrán dos ramas permanentes:
 - `develop`: integración de funcionalidades y correcciones; despliega automáticamente a DEV.
 - `main`: código estable, funcional y elegible para promoción; despliega automáticamente a QA y es el único origen permitido para PROD.
 
-Los ambientes no se representarán mediante ramas. Se utilizarán tres GitHub Environments de deployment: `dev`, `qa` y `prod`. Un cuarto Environment, `qa-approval`, funciona únicamente como puerta de gobernanza para el sign-off funcional y no representa infraestructura adicional.
+Los ambientes no se representarán mediante ramas. Se utilizarán tres GitHub Environments de deployment: `dev`, `qa` y `prod`. Un cuarto Environment, `qa-signoff`, funciona únicamente como puerta de gobernanza para el sign-off funcional y no representa infraestructura adicional.
 
 ```text
 feature/*, fix/*
@@ -62,11 +62,12 @@ Referencias de los patrones comparados:
 5. Todo PR requiere CI exitoso y las aprobaciones definidas en los rulesets.
 6. Un merge a `develop` despliega automáticamente a DEV.
 7. Un merge a `main` despliega automáticamente a QA.
-8. PROD requiere una promoción explícita, aprobación del GitHub Environment `prod` y un artefacto generado por CI desde `main`.
+8. Un sign-off QA exitoso inicia la promoción a PROD sin copiar identificadores manualmente; el deployment requiere aprobación del GitHub Environment `prod` y un artefacto generado por CI desde `main`.
 9. QA y PROD deben recibir exactamente el mismo artefacto; CD no recompila.
 10. La trazabilidad mínima incluye versión, SHA, run de CI, rama de origen y timestamp. En una evolución productiva también incluirá el digest.
 11. Una aprobación manual no puede sustituir una validación QA fallida: PROD exige smoke evidence y sign-off funcional de QA para el mismo SHA.
 12. Un defecto encontrado en QA se corrige desde `main` mediante `fix/qa-*` y se sincroniza después hacia `develop`; `hotfix/*` se reserva para defectos presentes en PROD.
+13. Un check obligatorio valida las rutas de PR y la ascendencia de `fix/qa-*` y `hotfix/*`.
 
 ### Consecuencias positivas
 

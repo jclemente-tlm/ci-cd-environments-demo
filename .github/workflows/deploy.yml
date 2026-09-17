@@ -9,6 +9,7 @@ on:
       branch: { required: true, type: string }
       version: { required: true, type: string }
       validate_qa: { required: false, type: boolean, default: false }
+      cancel_in_progress: { required: false, type: boolean, default: false }
 
 permissions:
   actions: read
@@ -20,7 +21,7 @@ jobs:
     environment: ${{ inputs.environment }}
     concurrency:
       group: deployment-${{ inputs.environment }}
-      cancel-in-progress: false
+      cancel-in-progress: ${{ inputs.cancel_in_progress }}
     steps:
       - name: Download the CI artifact (no rebuild)
         uses: actions/download-artifact@v4
