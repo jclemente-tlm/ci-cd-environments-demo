@@ -1,0 +1,135 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: ID de una ejecución CI exitosa sobre main
+        required: true
+        type: string
+      commit_sha:
+        description: SHA completo asociado al artefacto de CI
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  context:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      run_id: ${{ steps.values.outputs.run_id }}
+      sha: ${{ steps.values.outputs.sha }}
+      branch: ${{ steps.values.outputs.branch }}
+      version: ${{ steps.values.outputs.version }}
+    steps:
+      - id: values
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          AUTO_RUN_ID: ${{ github.event.workflow_run.id }}
+          AUTO_SHA: ${{ github.event.workflow_run.head_sha }}
+          AUTO_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          MANUAL_RUN_ID: ${{ inputs.ci_run_id }}
+          MANUAL_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            RUN_JSON=$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPOSITORY/actions/runs/$MANUAL_RUN_ID")
+            test "$(jq -r '.name' <<< "$RUN_JSON")" = "CI"
+            test "$(jq -r '.conclusion' <<< "$RUN_JSON")" = "success"
+            test "$(jq -r '.head_branch' <<< "$RUN_JSON")" = "main"
+            test "$(jq -r '.head_sha' <<< "$RUN_JSON")" = "$MANUAL_SHA"
+
+            SMOKE_JSON=$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPOSITORY/actions/artifacts?name=qa-smoke-evidence-$MANUAL_SHA-$MANUAL_RUN_ID&per_page=100")
+            SMOKE_RUN_ID=$(jq -r \
+              '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .workflow_run.id // empty' \
+              <<< "$SMOKE_JSON")
+            test -n "$SMOKE_RUN_ID"
+
+            SMOKE_RUN_JSON=$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPOSITORY/actions/runs/$SMOKE_RUN_ID")
+            test "$(jq -r '.name' <<< "$SMOKE_RUN_JSON")" = "CD"
+            test "$(jq -r '.event' <<< "$SMOKE_RUN_JSON")" = "workflow_run"
+            test "$(jq -r '.conclusion' <<< "$SMOKE_RUN_JSON")" = "success"
+
+            SIGNOFF_JSON=$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPOSITORY/actions/artifacts?name=qa-signoff-$MANUAL_SHA-$MANUAL_RUN_ID&per_page=100")
+            SIGNOFF_RUN_ID=$(jq -r \
+              '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .workflow_run.id // empty' \
+              <<< "$SIGNOFF_JSON")
+            test -n "$SIGNOFF_RUN_ID"
+
+            SIGNOFF_RUN_JSON=$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPOSITORY/actions/runs/$SIGNOFF_RUN_ID")
+            test "$(jq -r '.name' <<< "$SIGNOFF_RUN_JSON")" = "QA Sign-off"
+            test "$(jq -r '.event' <<< "$SIGNOFF_RUN_JSON")" = "workflow_dispatch"
+            test "$(jq -r '.conclusion' <<< "$SIGNOFF_RUN_JSON")" = "success"
+            echo "run_id=$MANUAL_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "sha=$MANUAL_SHA" >> "$GITHUB_OUTPUT"
+            echo "branch=main" >> "$GITHUB_OUTPUT"
+            echo "version=0.1.0-$MANUAL_RUN_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_id=$AUTO_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "sha=$AUTO_SHA" >> "$GITHUB_OUTPUT"
+            echo "branch=$AUTO_BRANCH" >> "$GITHUB_OUTPUT"
+            echo "version=0.1.0-$AUTO_RUN_ID" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-dev:
+    needs: context
+    if: github.event_name == 'workflow_run' && needs.context.outputs.branch == 'develop'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
+      artifact_run_id: ${{ needs.context.outputs.run_id }}
+      commit_sha: ${{ needs.context.outputs.sha }}
+      branch: ${{ needs.context.outputs.branch }}
+      version: ${{ needs.context.outputs.version }}
+    secrets: inherit
+
+  deploy-qa:
+    needs: context
+    if: github.event_name == 'workflow_run' && needs.context.outputs.branch == 'main'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: qa
+      artifact_run_id: ${{ needs.context.outputs.run_id }}
+      commit_sha: ${{ needs.context.outputs.sha }}
+      branch: ${{ needs.context.outputs.branch }}
+      version: ${{ needs.context.outputs.version }}
+      validate_qa: true
+    secrets: inherit
+
+  deploy-prod:
+    needs: context
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: prod
+      artifact_run_id: ${{ needs.context.outputs.run_id }}
+      commit_sha: ${{ needs.context.outputs.sha }}
+      branch: main
+      version: ${{ needs.context.outputs.version }}
+    secrets: inherit

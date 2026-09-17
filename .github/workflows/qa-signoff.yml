@@ -1,0 +1,93 @@
+name: QA Sign-off
+
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: ID de la ejecución CI exitosa sobre main
+        required: true
+        type: string
+      commit_sha:
+        description: SHA completo validado funcionalmente en QA
+        required: true
+        type: string
+      test_reference:
+        description: Referencia al plan, ticket o evidencia de pruebas
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  signoff:
+    name: Registrar aprobación funcional
+    runs-on: ubuntu-latest
+    environment: qa-approval
+    steps:
+      - name: Validate release candidate and QA smoke evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          TEST_REFERENCE: ${{ inputs.test_reference }}
+        run: |
+          CI_JSON=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPOSITORY/actions/runs/$CI_RUN_ID")
+          test "$(jq -r '.name' <<< "$CI_JSON")" = "CI"
+          test "$(jq -r '.conclusion' <<< "$CI_JSON")" = "success"
+          test "$(jq -r '.head_branch' <<< "$CI_JSON")" = "main"
+          test "$(jq -r '.head_sha' <<< "$CI_JSON")" = "$COMMIT_SHA"
+
+          SMOKE_JSON=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPOSITORY/actions/artifacts?name=qa-smoke-evidence-$COMMIT_SHA-$CI_RUN_ID&per_page=100")
+          SMOKE_RUN_ID=$(jq -r \
+            '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .workflow_run.id // empty' \
+            <<< "$SMOKE_JSON")
+          test -n "$SMOKE_RUN_ID"
+
+          SMOKE_RUN_JSON=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPOSITORY/actions/runs/$SMOKE_RUN_ID")
+          test "$(jq -r '.name' <<< "$SMOKE_RUN_JSON")" = "CD"
+          test "$(jq -r '.event' <<< "$SMOKE_RUN_JSON")" = "workflow_run"
+          test "$(jq -r '.conclusion' <<< "$SMOKE_RUN_JSON")" = "success"
+
+          VERSION="0.1.0-$CI_RUN_ID"
+          printf '%s\n' \
+            "commit=$COMMIT_SHA" \
+            "version=$VERSION" \
+            "branch=main" \
+            "ci_run=$CI_RUN_ID" \
+            "qa_cd_run=$SMOKE_RUN_ID" \
+            "signoff_run=${{ github.run_id }}" \
+            "requested_by=${{ github.actor }}" \
+            "test_reference=$TEST_REFERENCE" > qa-signoff.txt
+
+          {
+            echo "## QA functional sign-off"
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Commit | $COMMIT_SHA |"
+            echo "| Version | $VERSION |"
+            echo "| CI run | $CI_RUN_ID |"
+            echo "| QA CD run | $SMOKE_RUN_ID |"
+            echo "| Test reference | $TEST_REFERENCE |"
+            echo "| Requested by | ${{ github.actor }} |"
+            echo "| Environment | qa-approval |"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Record functional QA sign-off
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-signoff-${{ inputs.commit_sha }}-${{ inputs.ci_run_id }}
+          path: qa-signoff.txt
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true

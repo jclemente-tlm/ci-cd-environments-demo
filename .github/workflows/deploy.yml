@@ -1,0 +1,121 @@
+name: Reusable simulated deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment: { required: true, type: string }
+      artifact_run_id: { required: true, type: string }
+      commit_sha: { required: true, type: string }
+      branch: { required: true, type: string }
+      version: { required: true, type: string }
+      validate_qa: { required: false, type: boolean, default: false }
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deployment-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - name: Download the CI artifact (no rebuild)
+        uses: actions/download-artifact@v4
+        with:
+          name: application-${{ inputs.commit_sha }}
+          path: artifact
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.artifact_run_id }}
+      - name: Simulate deployment
+        env:
+          APP_NAME: ci-cd-environments-demo
+          APP_ENVIRONMENT: ${{ vars.APP_ENVIRONMENT }}
+          APP_VERSION: ${{ inputs.version }}
+          APP_COMMIT_SHA: ${{ inputs.commit_sha }}
+          APP_BRANCH: ${{ inputs.branch }}
+          DEMO_DEPLOY_TOKEN: ${{ secrets.DEMO_DEPLOY_TOKEN }}
+        run: |
+          test -n "$APP_ENVIRONMENT"
+          test -n "$DEMO_DEPLOY_TOKEN"
+          test -f artifact/Cicd.Demo.Api.dll
+          DEPLOYED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          {
+            echo "## Deployment successful"
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Application | $APP_NAME |"
+            echo "| Environment | $APP_ENVIRONMENT |"
+            echo "| Branch | $APP_BRANCH |"
+            echo "| Commit | $APP_COMMIT_SHA |"
+            echo "| Version | $APP_VERSION |"
+            echo "| Deployed at | $DEPLOYED_AT |"
+            echo "| Artifact source run | ${{ inputs.artifact_run_id }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Deployment successful: $APP_NAME -> $APP_ENVIRONMENT ($APP_VERSION, $APP_COMMIT_SHA)"
+      - name: Validate QA deployment
+        if: inputs.validate_qa
+        env:
+          APP_ENVIRONMENT: ${{ vars.APP_ENVIRONMENT }}
+          APP_VERSION: ${{ inputs.version }}
+          APP_COMMIT_SHA: ${{ inputs.commit_sha }}
+          APP_BRANCH: ${{ inputs.branch }}
+          APP_DEPLOYED_AT: ${{ github.run_id }}
+        run: |
+          test "$APP_ENVIRONMENT" = "qa"
+          ASPNETCORE_URLS=http://127.0.0.1:5088 dotnet artifact/Cicd.Demo.Api.dll > qa-api.log 2>&1 &
+          API_PID=$!
+          trap 'kill "$API_PID" 2>/dev/null || true' EXIT
+
+          READY=false
+          for attempt in {1..15}; do
+            if curl --fail --silent http://127.0.0.1:5088/health > health.json; then
+              READY=true
+              break
+            fi
+            sleep 1
+          done
+          test "$READY" = "true"
+          test "$(jq -r '.status' health.json)" = "healthy"
+
+          curl --fail --silent http://127.0.0.1:5088/environment > environment.json
+          test "$(jq -r '.environment' environment.json)" = "qa"
+
+          curl --fail --silent http://127.0.0.1:5088/version > version.json
+          test "$(jq -r '.version' version.json)" = "$APP_VERSION"
+          test "$(jq -r '.commit' version.json)" = "$APP_COMMIT_SHA"
+          test "$(jq -r '.branch' version.json)" = "main"
+
+          {
+            echo "## QA validation passed"
+            echo "Smoke tests passed for commit \`$APP_COMMIT_SHA\` and version \`$APP_VERSION\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' \
+            "commit=$APP_COMMIT_SHA" \
+            "version=$APP_VERSION" \
+            "branch=$APP_BRANCH" \
+            "ci_run=${{ inputs.artifact_run_id }}" \
+            "cd_run=${{ github.run_id }}" > qa-smoke-evidence.txt
+      - name: Record successful QA evidence
+        if: inputs.validate_qa
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-smoke-evidence-${{ inputs.commit_sha }}-${{ inputs.artifact_run_id }}
+          path: qa-smoke-evidence.txt
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
+      - name: Upload QA diagnostics on failure
+        if: failure() && inputs.validate_qa
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-diagnostics-${{ inputs.commit_sha }}-${{ github.run_id }}
+          path: |
+            qa-api.log
+            health.json
+            environment.json
+            version.json
+          if-no-files-found: warn
+          retention-days: 14
