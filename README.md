@@ -50,7 +50,7 @@ La promoción a PROD se inicia automáticamente después de un sign-off QA exito
 
 ## Configuración de GitHub
 
-Crear manualmente los destinos `dev`, `qa` y `prod`, además de la puerta de gobernanza `qa-signoff`. En los tres destinos definir `APP_ENVIRONMENT` y el secret ficticio `DEMO_DEPLOY_TOKEN`. Configurar required reviewers en `qa-signoff` y `prod`, con restricción a `main`. Ningún valor secreto se registra o se incluye en el artefacto.
+Crear manualmente los destinos `dev`, `qa` y `prod`, además de la puerta de gobernanza `qa-signoff`. En los tres destinos de deployment definir el secret ficticio `DEMO_DEPLOY_TOKEN`. El nombre de ambiente se deriva del input que selecciona el GitHub Environment, evitando configuración duplicada. Configurar required reviewers en `qa-signoff` y `prod`, con restricción a `main`. Ningún valor secreto se registra o se incluye en el artefacto.
 
 Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks `CI` y `PR Policy` exitosos. Los detalles y comandos de demo están en:
 
