@@ -17,6 +17,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-route:
+    name: Validate branch route
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Validate source, destination and ancestry
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          case "$BASE_BRANCH:$HEAD_BRANCH" in
+            develop:feature/*|develop:fix/*|develop:refactor/*|develop:main|main:develop|main:fix/qa-*|main:hotfix/*)
+              ;;
+            *)
+              echo "Unsupported PR route: $HEAD_BRANCH -> $BASE_BRANCH" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$BASE_BRANCH" = "develop" ] && [[ "$HEAD_BRANCH" == fix/qa-* ]]; then
+            echo "QA corrections must enter develop through main." >&2
+            exit 1
+          fi
+
+          if [[ "$HEAD_BRANCH" == fix/qa-* || "$HEAD_BRANCH" == hotfix/* ]]; then
+            git fetch --no-tags origin main
+            git merge-base --is-ancestor origin/main HEAD || {
+              echo "$HEAD_BRANCH must include the current main branch." >&2
+              exit 1
+            }
+
+            if git rev-list --merges origin/main..HEAD | grep -q .; then
+              echo "$HEAD_BRANCH must not merge another development line." >&2
+              exit 1
+            fi
+          fi
+
+          echo "Allowed PR route: $HEAD_BRANCH -> $BASE_BRANCH"
+
   build-test-package:
     name: Build and test
     runs-on: ubuntu-latest
@@ -96,3 +139,45 @@ jobs:
           version: 0.1.0-${{ github.run_id }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
           validate_qa: 'true'
+
+  qa-signoff:
+    name: Approve QA
+    needs: deploy-qa
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: qa-signoff
+    concurrency:
+      group: approval-qa
+      cancel-in-progress: false
+    steps:
+      - name: Record QA approval
+        run: |
+          {
+            echo "## QA sign-off approved"
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Commit | $GITHUB_SHA |"
+            echo "| Version | 0.1.0-$GITHUB_RUN_ID |"
+            echo "| Branch | $GITHUB_REF_NAME |"
+            echo "| Pipeline run | $GITHUB_RUN_ID |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-prod:
+    name: Deploy PROD
+    needs: qa-signoff
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: deployment-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy
+        with:
+          environment: prod
+          artifact_run_id: ${{ github.run_id }}
+          commit_sha: ${{ github.sha }}
+          branch: ${{ github.ref_name }}
+          version: 0.1.0-${{ github.run_id }}
+          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
