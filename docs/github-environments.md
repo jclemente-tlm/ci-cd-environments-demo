@@ -23,7 +23,7 @@ Use valores ficticios distintos para el secret en cada Environment de deployment
 
 La aprobación ocurre antes de ejecutar el job asociado a `prod`; por eso sus secrets solo están disponibles después de autorizarlo. GitHub conserva el historial de deployments, actor, commit, estado y aprobación.
 
-El Environment `qa-approval` aplica la misma mecánica después de que QA termina sus pruebas manuales. La ejecución genera `qa-signoff-<SHA>-<CI_RUN_ID>`; el historial del Environment conserva quién autorizó el job. El artifact registra el solicitante y la referencia de pruebas, pero no intenta atribuirse el nombre del reviewer.
+El Environment `qa-approval` aplica la misma mecánica después de que QA termina sus pruebas manuales. La ejecución genera `qa-signoff-<SHA>-<CI_RUN_ID>` con evidencia JSON; el historial del Environment conserva quién autorizó el job. El artifact registra el solicitante y la referencia de pruebas, pero no intenta atribuirse el nombre del reviewer. Un sign-off exitoso inicia automáticamente `Promote PROD`, cuyo job de deployment espera la aprobación independiente de `prod`.
 
 > La disponibilidad depende del plan y de la visibilidad. GitHub ofrece Environments y sus reglas de protección en repositorios públicos para los planes actuales. En GitHub Free, Pro y Team, reglas como required reviewers y wait timers solo están disponibles para repositorios públicos. Los repositorios privados o internos requieren un plan compatible, y algunas protecciones siguen reservadas a repositorios públicos. Por eso esta demo se publica con datos completamente ficticios; la aprobación no debe simularse con un script.
 

@@ -18,8 +18,8 @@ CI(main, exitoso)        ──download artifact──> Environment qa
                                                    └──smoke tests──> evidencia QA por SHA
 QA Sign-off(run + SHA + referencia)
                          ──validar smoke──> Environment qa-approval ──aprobación──> sign-off
-workflow_dispatch(run + SHA)
-                         ──validar CI + smoke + sign-off──> Environment prod ──aprobación──> deploy
+sign-off exitoso
+                         ──resolver candidato automáticamente──> Environment prod ──aprobación──> deploy
 ```
 
 El CD no ejecuta `dotnet build` ni `dotnet publish`. Descarga el artefacto creado por el run indicado y comprueba que contenga la DLL. Después de desplegar a QA, inicia esa aplicación y valida `/health`, `/environment` y `/version`. Solo si las respuestas coinciden con el ambiente, versión, SHA y rama esperados publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`.
@@ -28,7 +28,11 @@ Cuando terminan las pruebas funcionales, QA inicia `QA Sign-off` con run de CI, 
 
 DEV cancela un deployment en curso cuando aparece otro más reciente, porque interesa reflejar con rapidez el estado actual de `develop`. QA y PROD no cancelan deployments iniciados: sus ejecuciones conservan la evidencia y las decisiones de promoción asociadas a cada candidato.
 
-Para PROD se exige: workflow `CI` exitoso sobre `main`, SHA coincidente, smoke evidence no expirada y sign-off funcional no expirado. Después se aplican las reglas de aprobación de `prod`. La versión `0.1.0-<CI run ID>` se deriva una sola vez y es idéntica en QA, sign-off y PROD; el operador no puede sobrescribirla.
+Un sign-off exitoso dispara `Promote PROD`. Este descarga la evidencia JSON de esa ejecución, recupera run de CI, SHA y versión, y vuelve a comprobar que CI fue exitoso sobre `main`. Después solicita la aprobación de `prod`. La versión `0.1.0-<CI run ID>` es idéntica en QA, sign-off y PROD; el operador no copia ni puede sobrescribir identificadores técnicos.
+
+## Política de Pull Requests
+
+`PR Policy` convierte las rutas documentadas en un check ejecutable. Permite `feature/*` y `fix/*` hacia `develop`, `develop` hacia `main`, `fix/qa-*` y `hotfix/*` hacia `main`, y `main` hacia `develop` para resincronización. Las ramas de corrección QA y hotfix deben contener el estado actual de `main` y no pueden incluir merges de otra línea de desarrollo. El ruleset debe exigir este check junto con CI.
 
 ## Fallas en QA
 
