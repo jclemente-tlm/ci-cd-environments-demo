@@ -21,12 +21,15 @@ permissions:
   contents: read
 
 jobs:
-  signoff:
-    name: Registrar aprobación funcional
+  validate-candidate:
+    name: Validar candidato y evidencia técnica
     runs-on: ubuntu-latest
-    environment: qa-approval
+    outputs:
+      smoke_run_id: ${{ steps.validate.outputs.smoke_run_id }}
+      version: ${{ steps.validate.outputs.version }}
     steps:
       - name: Validate release candidate and QA smoke evidence
+        id: validate
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -61,6 +64,23 @@ jobs:
           test "$(jq -r '.conclusion' <<< "$SMOKE_RUN_JSON")" = "success"
 
           VERSION="0.1.0-$CI_RUN_ID"
+          echo "smoke_run_id=$SMOKE_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  signoff:
+    name: Registrar aprobación funcional
+    needs: validate-candidate
+    runs-on: ubuntu-latest
+    environment: qa-approval
+    steps:
+      - name: Record approved functional sign-off
+        env:
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          TEST_REFERENCE: ${{ inputs.test_reference }}
+          SMOKE_RUN_ID: ${{ needs.validate-candidate.outputs.smoke_run_id }}
+          VERSION: ${{ needs.validate-candidate.outputs.version }}
+        run: |
           printf '%s\n' \
             "commit=$COMMIT_SHA" \
             "version=$VERSION" \
@@ -83,7 +103,7 @@ jobs:
             echo "| Requested by | ${{ github.actor }} |"
             echo "| Environment | qa-approval |"
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Record functional QA sign-off
+      - name: Upload functional QA sign-off
         uses: actions/upload-artifact@v4
         with:
           name: qa-signoff-${{ inputs.commit_sha }}-${{ inputs.ci_run_id }}

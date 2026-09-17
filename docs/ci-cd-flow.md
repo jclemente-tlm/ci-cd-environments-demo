@@ -4,11 +4,11 @@ Este documento describe la automatización de la PoC. La matriz empresarial de c
 
 ## CI
 
-CI se ejecuta en pushes de las ramas del modelo y en PR hacia `develop` o `main`. Realiza restore, build con warnings como errores, tests y publicación de resultados. En pushes también publica `application-<commit SHA>` con retención de 30 días; los PR no publican artefactos desplegables.
+CI se ejecuta en pushes de las ramas del modelo y en PR hacia `develop` o `main`. Realiza restore, build con warnings como errores, tests y publicación de resultados. Solo los pushes a las ramas permanentes `develop` y `main` publican `application-<commit SHA>` con retención de 30 días; las ramas temporales, los PR y las ejecuciones manuales no publican artefactos desplegables.
 
 En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST, SonarQube para análisis de calidad, SCA, secret scanning, container scanning e IaC scanning. Los merges en ramas permanentes repiten los controles sobre el commit integrado; solo entonces publican un artefacto. La PoC todavía no implementa esas herramientas y no debe interpretarse que ya estén operativas. La política de SonarQube bloquea el pipeline cuando su Quality Gate no es exitoso.
 
-Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí se conserva el check requerido. `GITHUB_TOKEN` usa solo `contents: read` en CI.
+Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí se conserva el check requerido. Por ello, un merge compuesto exclusivamente por documentación no crea artefacto ni deployment, aunque actualice `develop` o `main`. `GITHUB_TOKEN` usa solo `contents: read` en CI.
 
 ## CD y promoción
 
@@ -24,7 +24,9 @@ workflow_dispatch(run + SHA)
 
 El CD no ejecuta `dotnet build` ni `dotnet publish`. Descarga el artefacto creado por el run indicado y comprueba que contenga la DLL. Después de desplegar a QA, inicia esa aplicación y valida `/health`, `/environment` y `/version`. Solo si las respuestas coinciden con el ambiente, versión, SHA y rama esperados publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`.
 
-Cuando terminan las pruebas funcionales, QA inicia `QA Sign-off` con run de CI, SHA y referencia al plan o ticket. El workflow verifica CI y smoke evidence, espera aprobación de `qa-approval` y publica `qa-signoff-<SHA>-<CI_RUN_ID>`.
+Cuando terminan las pruebas funcionales, QA inicia `QA Sign-off` con run de CI, SHA y referencia al plan o ticket. El workflow verifica primero CI y smoke evidence; solo un candidato técnicamente válido solicita la aprobación de `qa-approval` y publica `qa-signoff-<SHA>-<CI_RUN_ID>`.
+
+DEV cancela un deployment en curso cuando aparece otro más reciente, porque interesa reflejar con rapidez el estado actual de `develop`. QA y PROD no cancelan deployments iniciados: sus ejecuciones conservan la evidencia y las decisiones de promoción asociadas a cada candidato.
 
 Para PROD se exige: workflow `CI` exitoso sobre `main`, SHA coincidente, smoke evidence no expirada y sign-off funcional no expirado. Después se aplican las reglas de aprobación de `prod`. La versión `0.1.0-<CI run ID>` se deriva una sola vez y es idéntica en QA, sign-off y PROD; el operador no puede sobrescribirla.
 

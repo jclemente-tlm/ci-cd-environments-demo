@@ -16,9 +16,9 @@ El nombre oficial dentro de esta propuesta es **estrategia de dos ramas con prom
 
 ## Ramas permanentes
 
-`develop` integra funcionalidades y correcciones normales. Todo merge ejecuta CI y, si resulta exitoso, despliega automáticamente a DEV. No representa una versión productiva.
+`develop` integra funcionalidades y correcciones normales. Todo merge que modifica la aplicación ejecuta CI y, si resulta exitoso, despliega automáticamente a DEV. Un cambio exclusivo de documentación no crea artefacto ni deployment. `develop` no representa una versión productiva.
 
-`main` contiene código estable, funcional y elegible para promoción. Todo merge ejecuta CI y despliega automáticamente a QA; un operador puede promover después ese artefacto exacto a PROD. `main` no equivale al estado actual de producción: ese estado lo identifica el historial del Environment `prod`.
+`main` contiene código estable, funcional y elegible para promoción. Todo merge que modifica la aplicación ejecuta CI y despliega automáticamente a QA; un operador puede promover después ese artefacto exacto a PROD. Un cambio exclusivo de documentación no crea un candidato nuevo. `main` no equivale al estado actual de producción: ese estado lo identifica el historial del Environment `prod`.
 
 ## Ramas temporales
 
@@ -56,6 +56,8 @@ Crear rulesets manuales para `main` y `develop`:
 - restringir borrado y limitar excepciones a administradores designados.
 
 Para `main` conviene usar mayor número de revisores o CODEOWNERS. La protección de ramas controla cambios de código; la protección del Environment controla el despliegue. Son capas complementarias.
+
+Un PR `develop → main` representa el contenido actual de `develop`, no una fotografía congelada. Si nuevos commits llegan a `develop` mientras el PR está abierto, pasan a formar parte de la promoción. El equipo debe mantener breve esa ventana y revisar nuevamente el PR cuando cambie; si necesita estabilizaciones prolongadas o congelar alcance, debe introducir una rama temporal `release/*`.
 
 ## Alternativas y evolución
 
