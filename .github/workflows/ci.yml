@@ -1,8 +1,8 @@
-name: CI
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop, 'feature/**', 'fix/**', 'hotfix/**']
+    branches: [main, develop, 'feature/**', 'fix/**', 'hotfix/**', 'refactor/**']
     paths-ignore: ['**/*.md', 'docs/**']
   pull_request:
     branches: [main, develop]
@@ -13,11 +13,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: pipeline-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-test-package:
+    name: Build and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,15 +56,43 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  deploy:
+  deploy-dev:
+    name: Deploy DEV
     needs: build-test-package
-    if: >-
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
-    uses: ./.github/workflows/cd.yml
-    with:
-      artifact_run_id: ${{ github.run_id }}
-      commit_sha: ${{ github.sha }}
-      branch: ${{ github.ref_name }}
-      version: 0.1.0-${{ github.run_id }}
-    secrets: inherit
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: dev
+    concurrency:
+      group: deployment-dev
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy
+        with:
+          environment: dev
+          artifact_run_id: ${{ github.run_id }}
+          commit_sha: ${{ github.sha }}
+          branch: ${{ github.ref_name }}
+          version: 0.1.0-${{ github.run_id }}
+          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
+
+  deploy-qa:
+    name: Deploy QA
+    needs: build-test-package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: qa
+    concurrency:
+      group: deployment-qa
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy
+        with:
+          environment: qa
+          artifact_run_id: ${{ github.run_id }}
+          commit_sha: ${{ github.sha }}
+          branch: ${{ github.ref_name }}
+          version: 0.1.0-${{ github.run_id }}
+          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
+          validate_qa: 'true'

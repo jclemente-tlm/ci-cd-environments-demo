@@ -23,7 +23,7 @@ jobs:
           HEAD_BRANCH: ${{ github.head_ref }}
         run: |
           case "$BASE_BRANCH:$HEAD_BRANCH" in
-            develop:feature/*|develop:fix/*|develop:main|main:develop|main:fix/qa-*|main:hotfix/*)
+            develop:feature/*|develop:fix/*|develop:refactor/*|develop:main|main:develop|main:fix/qa-*|main:hotfix/*)
               ;;
             *)
               echo "Unsupported PR route: $HEAD_BRANCH -> $BASE_BRANCH" >&2

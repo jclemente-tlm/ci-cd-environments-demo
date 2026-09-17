@@ -26,6 +26,7 @@ El nombre oficial dentro de esta propuesta es **estrategia de dos ramas con prom
 |---|---|---|---|
 | `feature/*` | `develop` | `develop` | Funcionalidad nueva |
 | `fix/*` | `develop` | `develop` | Corrección normal |
+| `refactor/*` | `develop` | `develop` | Mejora interna sin nueva funcionalidad |
 | `hotfix/*` | `main` | `main` | Incidente urgente de producción |
 
 Ejemplos: `feature/add-version-endpoint`, `fix/version-format` y `hotfix/critical-api-error`. Deben ser breves y eliminarse tras el merge.
@@ -47,13 +48,13 @@ El workflow `PR Policy` exige que `fix/qa-*` contenga el estado actual de `main`
 
 ## Pull requests y protección recomendada
 
-Flujos permitidos: `feature/* → develop`, `fix/* → develop`, `develop → main`, `fix/qa-* → main`, `hotfix/* → main` y, para resincronizar correcciones de QA o PROD, `main → develop`.
+Flujos permitidos: `feature/* → develop`, `fix/* → develop`, `refactor/* → develop`, `develop → main`, `fix/qa-* → main`, `hotfix/* → main` y, para resincronizar correcciones de QA o PROD, `main → develop`.
 
 Crear rulesets manuales para `main` y `develop`:
 
 - bloquear push directo y force-push;
 - requerir pull request y al menos una aprobación;
-- exigir los checks de CI y `PR Policy`, además de la resolución de conversaciones;
+- exigir los checks `Build and test` y `Validate branch route`, además de la resolución de conversaciones;
 - exigir rama actualizada antes del merge cuando el ritmo del equipo lo permita;
 - restringir borrado y limitar excepciones a administradores designados.
 
