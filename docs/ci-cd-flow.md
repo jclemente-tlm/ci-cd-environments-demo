@@ -13,8 +13,8 @@ Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí 
 ## CD y promoción
 
 ```text
-CI(develop, exitoso)     ──download artifact──> Environment dev
-CI(main, exitoso)        ──download artifact──> Environment qa
+CI(develop, mismo run)   ──reusable CD + artifact──> Environment dev
+CI(main, mismo run)      ──reusable CD + artifact──> Environment qa
                                                    └──smoke tests──> evidencia QA por SHA
 QA Sign-off(run + SHA + referencia)
                          ──validar smoke──> Environment qa-signoff ──aprobación──> sign-off
@@ -22,7 +22,9 @@ sign-off exitoso
                          ──resolver candidato automáticamente──> Environment prod ──aprobación──> deploy
 ```
 
-El CD no ejecuta `dotnet build` ni `dotnet publish`. Descarga el artefacto creado por el run indicado y comprueba que contenga la DLL. Después de desplegar a QA, inicia esa aplicación y valida `/health`, `/environment` y `/version`. Solo si las respuestas coinciden con el ambiente, versión, SHA y rama esperados publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`.
+El CD no ejecuta `dotnet build` ni `dotnet publish`. CI lo invoca como reusable workflow después de publicar el artefacto; ambos forman parte del mismo run y conservan el `GITHUB_REF` original para las restricciones de `dev` y `qa`. CD descarga ese artefacto y comprueba que contenga la DLL. Después de desplegar a QA, inicia la aplicación y valida `/health`, `/environment` y `/version`. Solo si las respuestas coinciden publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>` en ese mismo run.
+
+No se utiliza `workflow_run` entre CI y los deployments automáticos: ese evento siempre usa `GITHUB_REF` y `GITHUB_SHA` de la rama predeterminada, lo que impediría que una ejecución originada en `develop` satisfaga la branch policy de `dev`.
 
 Cuando terminan las pruebas funcionales, QA inicia `QA Sign-off` con run de CI, SHA y referencia al plan o ticket. El workflow verifica primero CI y smoke evidence; solo un candidato técnicamente válido solicita la aprobación de `qa-signoff` y publica `qa-signoff-<SHA>-<CI_RUN_ID>`.
 
