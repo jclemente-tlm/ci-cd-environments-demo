@@ -161,7 +161,7 @@ El inventario no implica que todos los resultados bloqueen actualmente un merge.
 | Checkov | Configurado con `soft_fail: false`; bloquea ante checks fallidos |
 | OWASP Dependency Check | Bloquea por severidad crítica; vulnerabilidades altas generan advertencia |
 | Trivy Image y FS | Generan reportes, pero `continue-on-error` y `|| true` evitan que bloqueen |
-| Cobertura | Se genera y publica; no se identificó un umbral mínimo explícito en el workflow de test |
+| Cobertura | Todavía no se genera en esta PoC; la medición y el umbral forman parte del estado objetivo |
 | Hadolint | Ejecuta el análisis y publica reportes; su política final debe normalizarse explícitamente |
 | Validación semántica del PR | Bloquea títulos que no cumplen los tipos permitidos |
 

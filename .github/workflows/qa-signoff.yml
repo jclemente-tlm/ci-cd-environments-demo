@@ -54,14 +54,7 @@ jobs:
             '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .workflow_run.id // empty' \
             <<< "$SMOKE_JSON")
           test -n "$SMOKE_RUN_ID"
-
-          SMOKE_RUN_JSON=$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$REPOSITORY/actions/runs/$SMOKE_RUN_ID")
-          test "$(jq -r '.name' <<< "$SMOKE_RUN_JSON")" = "CD"
-          test "$(jq -r '.event' <<< "$SMOKE_RUN_JSON")" = "workflow_run"
-          test "$(jq -r '.conclusion' <<< "$SMOKE_RUN_JSON")" = "success"
+          test "$SMOKE_RUN_ID" = "$CI_RUN_ID"
 
           VERSION="0.1.0-$CI_RUN_ID"
           echo "smoke_run_id=$SMOKE_RUN_ID" >> "$GITHUB_OUTPUT"
@@ -86,7 +79,7 @@ jobs:
             --arg version "$VERSION" \
             --arg branch "main" \
             --arg ci_run_id "$CI_RUN_ID" \
-            --arg qa_cd_run_id "$SMOKE_RUN_ID" \
+            --arg qa_validation_run_id "$SMOKE_RUN_ID" \
             --arg signoff_run_id "${{ github.run_id }}" \
             --arg requested_by "${{ github.actor }}" \
             --arg test_reference "$TEST_REFERENCE" \
@@ -95,7 +88,7 @@ jobs:
               version: $version,
               branch: $branch,
               ci_run_id: $ci_run_id,
-              qa_cd_run_id: $qa_cd_run_id,
+              qa_validation_run_id: $qa_validation_run_id,
               signoff_run_id: $signoff_run_id,
               requested_by: $requested_by,
               test_reference: $test_reference
@@ -108,7 +101,7 @@ jobs:
             echo "| Commit | $COMMIT_SHA |"
             echo "| Version | $VERSION |"
             echo "| CI run | $CI_RUN_ID |"
-            echo "| QA CD run | $SMOKE_RUN_ID |"
+            echo "| QA validation run | $SMOKE_RUN_ID |"
             echo "| Test reference | $TEST_REFERENCE |"
             echo "| Requested by | ${{ github.actor }} |"
             echo "| Environment | qa-signoff |"
