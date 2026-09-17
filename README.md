@@ -1,6 +1,6 @@
 # ci-cd-environments-demo
 
-PoC educativa de una API mínima en .NET 10 que muestra branching, CI/CD, promoción del mismo artefacto y GitHub Environments (`dev`, `qa`, `prod`). El despliegue es simulado: no crea infraestructura ni almacena credenciales reales.
+PoC de demostración basada en una API mínima en .NET 10 que muestra cómo GitHub Environments mejora el proceso de CI/CD, la promoción del mismo artefacto y la protección de despliegues hacia `dev`, `qa` y `prod`. El despliegue es simulado: no crea infraestructura ni almacena credenciales reales.
 
 El repositorio está diseñado para publicarse sin referencias a organizaciones, repositorios, sistemas o credenciales reales. El uso de un repositorio público permite probar required reviewers y otras reglas de protección de GitHub Environments en planes donde esas capacidades no están disponibles para repositorios privados.
 
@@ -39,7 +39,7 @@ curl http://localhost:8080/environment
 
 La automatización actual es deliberadamente mínima: implementa build, pruebas unitarias, empaquetado, promoción y smoke tests de QA. Los controles empresariales adicionales descritos en la documentación, incluidos cobertura y escaneos de seguridad, representan el estado objetivo y todavía no se ejecutan.
 
-- `ci.yml`: restaura, compila, prueba, publica resultados y genera una vez el artefacto `application-<sha>`.
+- `ci.yml`: restaura, compila, prueba y publica resultados. Solo los pushes a `develop` y `main` generan el artefacto desplegable `application-<sha>`.
 - `cd.yml`: tras CI exitoso despliega `develop` a DEV y `main` a QA. QA ejecuta smoke tests y registra evidencia técnica por SHA y run de CI. PROD exige CI, smoke tests y sign-off funcional para la misma identidad antes de solicitar aprobación.
 - `qa-signoff.yml`: registra la aprobación funcional manual mediante el Environment protegido `qa-approval`.
 - `deploy.yml`: reutiliza el mismo artefacto, enlaza el job al GitHub Environment y escribe trazabilidad en el Job Summary.

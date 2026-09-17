@@ -107,6 +107,7 @@ jobs:
       commit_sha: ${{ needs.context.outputs.sha }}
       branch: ${{ needs.context.outputs.branch }}
       version: ${{ needs.context.outputs.version }}
+      cancel_in_progress: true
     secrets: inherit
 
   deploy-qa:
