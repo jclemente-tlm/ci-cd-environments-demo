@@ -19,11 +19,11 @@ git switch -c feature/demo-change
 git push -u origin feature/demo-change
 ```
 
-Abrir PR `feature/demo-change → develop`, mostrar el check CI y hacer merge. En Actions, abrir la ejecución CI del push y demostrar el job reutilizable `deploy-dev / deploy`; su Summary debe indicar `Environment: dev`, SHA, rama, versión y timestamp. La página de `dev` conserva el deployment.
+Abrir PR `feature/demo-change → develop`, mostrar los checks `Build and test` y `Validate branch route`, y hacer merge. En Actions, abrir la ejecución **CI/CD Pipeline** del push y mostrar los jobs `Build and test` y `Deploy DEV`; el Summary de este último debe indicar Environment, SHA, rama, versión y timestamp. La página de `dev` conserva el deployment.
 
 ## Escenario 2 — Promoción a QA
 
-Abrir PR `develop → main`, aprobar y hacer merge. CI crea un artefacto nuevo para el SHA de `main`; CD lo descarga y despliega automáticamente a QA. Mostrar el Summary y el historial del Environment `qa`.
+Abrir PR `develop → main`, aprobar y hacer merge. **CI/CD Pipeline** crea un artefacto nuevo para el SHA de `main`; el job `Deploy QA` lo descarga y lo despliega automáticamente. Mostrar el Summary y el historial del Environment `qa`.
 
 Abrir el job de QA y mostrar los smoke tests de `/health`, `/environment` y `/version`, además del artefacto `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`. Explicar que una falla genera diagnósticos, pero no evidencia técnica exitosa.
 

@@ -130,7 +130,7 @@ CI restaura dependencias, compila, prueba, empaqueta mediante `dotnet publish` y
 
 La palabra *publish* de .NET significa preparar los archivos desplegables; no significa desplegar a un ambiente. Para evitar ambigüedad, los pasos se denominan **Package deployable application** y **Upload immutable build artifact**.
 
-CI y CD se mantienen en archivos reutilizables diferentes porque representan límites empresariales distintos: construcción y calidad por un lado, promoción, permisos y ambientes por otro. Para DEV y QA se ejecutan como jobs del mismo run: CI llama `cd.yml`, que a su vez llama `deploy.yml`. Así comparten el artefacto y conservan la rama original para las deployment branch policies. La promoción a PROD permanece en un workflow posterior porque siempre parte de `main` y requiere sign-off.
+La separación se expresa mediante jobs dentro de un solo **CI/CD Pipeline**: `Build and test` produce el artefacto y los jobs condicionales `Deploy DEV` y `Deploy QA` lo promueven sin recompilar. Los deployments reutilizan una composite action, evitando workflows visibles adicionales y conservando la rama original para las deployment branch policies. La promoción a PROD permanece en un workflow posterior porque requiere evidencia de sign-off y aprobación independiente.
 
 ### Consecuencias
 
