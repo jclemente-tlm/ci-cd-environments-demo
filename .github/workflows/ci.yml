@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -53,3 +54,16 @@ jobs:
           path: artifacts/app
           if-no-files-found: error
           retention-days: 30
+
+  deploy:
+    needs: build-test-package
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+    uses: ./.github/workflows/cd.yml
+    with:
+      artifact_run_id: ${{ github.run_id }}
+      commit_sha: ${{ github.sha }}
+      branch: ${{ github.ref_name }}
+      version: 0.1.0-${{ github.run_id }}
+    secrets: inherit

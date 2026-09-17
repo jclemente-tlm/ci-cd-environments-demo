@@ -39,8 +39,8 @@ curl http://localhost:8080/environment
 
 La automatización actual es deliberadamente mínima: implementa build, pruebas unitarias, empaquetado, promoción y smoke tests de QA. Los controles empresariales adicionales descritos en la documentación, incluidos cobertura y escaneos de seguridad, representan el estado objetivo y todavía no se ejecutan.
 
-- `ci.yml`: restaura, compila, prueba y publica resultados. Solo los pushes a `develop` y `main` generan el artefacto desplegable `application-<sha>`.
-- `cd.yml`: tras CI exitoso despliega `develop` a DEV y `main` a QA. QA ejecuta smoke tests y registra evidencia técnica por SHA y run de CI. PROD exige CI, smoke tests y sign-off funcional para la misma identidad antes de solicitar aprobación.
+- `ci.yml`: restaura, compila, prueba y publica resultados. Solo los pushes a `develop` y `main` generan el artefacto desplegable `application-<sha>` y llaman al CD reutilizable dentro del mismo run.
+- `cd.yml`: enruta `develop` a DEV y `main` a QA conservando la rama original del caller. QA ejecuta smoke tests y registra evidencia técnica por SHA y run de CI.
 - `qa-signoff.yml`: registra la aprobación funcional manual mediante el Environment protegido `qa-signoff`.
 - `promote-prod.yml`: toma automáticamente la evidencia del sign-off y solicita aprobación en `prod`, sin pedir al operador run ID ni SHA.
 - `pr-policy.yml`: valida las combinaciones permitidas de rama origen/destino y el origen de correcciones QA y hotfixes.
@@ -64,5 +64,7 @@ Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR
 ## Decisión de diseño
 
 GitHub Environments no se crean desde los workflows porque requiere permisos administrativos y ocultaría una parte importante de la demo. El pipeline tampoco recompila entre ambientes: QA y PROD reciben el artefacto identificado por el mismo SHA y run de CI. La versión es un metadato de promoción, no una compilación nueva.
+
+DEV y QA se invocan mediante reusable workflows en el mismo run de CI. Esto preserva `GITHUB_REF` (`develop` o `main`) para que las deployment branch policies de los Environments se apliquen correctamente. `workflow_run` se reserva para `Promote PROD`, donde tanto el sign-off como el destino productivo utilizan `main`.
 
 La rama permanente `qa` del modelo anterior `dev → qa → main` se reemplaza por el GitHub Environment `qa`. Las únicas ramas permanentes son `develop` y `main`; `main` contiene código promovible, mientras que el Environment `prod` registra qué versión está realmente desplegada.

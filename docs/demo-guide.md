@@ -19,7 +19,7 @@ git switch -c feature/demo-change
 git push -u origin feature/demo-change
 ```
 
-Abrir PR `feature/demo-change → develop`, mostrar el check CI y hacer merge. En Actions, abrir CD y demostrar el job `deploy-dev`; su Summary debe indicar `Environment: dev`, SHA, rama, versión y timestamp. La página de `dev` conserva el deployment.
+Abrir PR `feature/demo-change → develop`, mostrar el check CI y hacer merge. En Actions, abrir la ejecución CI del push y demostrar el job reutilizable `deploy-dev / deploy`; su Summary debe indicar `Environment: dev`, SHA, rama, versión y timestamp. La página de `dev` conserva el deployment.
 
 ## Escenario 2 — Promoción a QA
 
