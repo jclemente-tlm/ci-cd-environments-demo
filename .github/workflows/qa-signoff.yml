@@ -81,15 +81,25 @@ jobs:
           SMOKE_RUN_ID: ${{ needs.validate-candidate.outputs.smoke_run_id }}
           VERSION: ${{ needs.validate-candidate.outputs.version }}
         run: |
-          printf '%s\n' \
-            "commit=$COMMIT_SHA" \
-            "version=$VERSION" \
-            "branch=main" \
-            "ci_run=$CI_RUN_ID" \
-            "qa_cd_run=$SMOKE_RUN_ID" \
-            "signoff_run=${{ github.run_id }}" \
-            "requested_by=${{ github.actor }}" \
-            "test_reference=$TEST_REFERENCE" > qa-signoff.txt
+          jq -n \
+            --arg commit_sha "$COMMIT_SHA" \
+            --arg version "$VERSION" \
+            --arg branch "main" \
+            --arg ci_run_id "$CI_RUN_ID" \
+            --arg qa_cd_run_id "$SMOKE_RUN_ID" \
+            --arg signoff_run_id "${{ github.run_id }}" \
+            --arg requested_by "${{ github.actor }}" \
+            --arg test_reference "$TEST_REFERENCE" \
+            '{
+              commit_sha: $commit_sha,
+              version: $version,
+              branch: $branch,
+              ci_run_id: $ci_run_id,
+              qa_cd_run_id: $qa_cd_run_id,
+              signoff_run_id: $signoff_run_id,
+              requested_by: $requested_by,
+              test_reference: $test_reference
+            }' > qa-signoff.json
 
           {
             echo "## QA functional sign-off"
@@ -107,7 +117,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: qa-signoff-${{ inputs.commit_sha }}-${{ inputs.ci_run_id }}
-          path: qa-signoff.txt
+          path: qa-signoff.json
           if-no-files-found: error
           retention-days: 30
           overwrite: true

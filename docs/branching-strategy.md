@@ -43,6 +43,8 @@ main → fix/qa-* → PR main → CI → QA
 
 El artefacto QA fallido queda rechazado y no se recompila. La corrección produce un nuevo commit, un nuevo artefacto y una nueva validación QA. Si la falla era solamente de configuración o infraestructura, se corrige el ambiente y se reintenta el mismo artefacto sin cambios de código.
 
+El workflow `PR Policy` exige que `fix/qa-*` contenga el estado actual de `main` y rechaza merges de otras líneas dentro de esa rama. Esto evita incorporar accidentalmente el trabajo posterior de `develop`. Después de corregir y promover el candidato, la sincronización se realiza mediante un PR separado `main → develop`.
+
 ## Pull requests y protección recomendada
 
 Flujos permitidos: `feature/* → develop`, `fix/* → develop`, `develop → main`, `fix/qa-* → main`, `hotfix/* → main` y, para resincronizar correcciones de QA o PROD, `main → develop`.
@@ -51,7 +53,7 @@ Crear rulesets manuales para `main` y `develop`:
 
 - bloquear push directo y force-push;
 - requerir pull request y al menos una aprobación;
-- exigir el check de CI y resolución de conversaciones;
+- exigir los checks de CI y `PR Policy`, además de la resolución de conversaciones;
 - exigir rama actualizada antes del merge cuando el ritmo del equipo lo permita;
 - restringir borrado y limitar excepciones a administradores designados.
 
