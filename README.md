@@ -39,7 +39,7 @@ curl http://localhost:8080/environment
 
 La automatización actual es deliberadamente mínima: implementa build, pruebas unitarias, empaquetado, promoción y smoke tests de QA. Los controles empresariales adicionales descritos en la documentación, incluidos cobertura y escaneos de seguridad, representan el estado objetivo y todavía no se ejecutan.
 
-- `ci.yml`: define el único pipeline automático visible, **CI/CD Pipeline**. Compila y prueba todos los cambios; en pushes a `develop` o `main` también empaqueta el artefacto y ejecuta respectivamente `Deploy DEV` o `Deploy QA` dentro del mismo run.
+- `ci-cd-pipeline.yml`: define el único pipeline automático visible, **CI/CD Pipeline**. Compila y prueba todos los cambios; en pushes a `develop` o `main` también empaqueta el artefacto y ejecuta respectivamente `Deploy DEV` o `Deploy QA` dentro del mismo run.
 - `qa-signoff.yml`: registra la aprobación funcional manual mediante el Environment protegido `qa-signoff`.
 - `promote-prod.yml`: toma automáticamente la evidencia del sign-off y solicita aprobación en `prod`, sin pedir al operador run ID ni SHA.
 - `pr-policy.yml`: valida las combinaciones permitidas de rama origen/destino y el origen de correcciones QA y hotfixes.
