@@ -17,14 +17,14 @@ CI(develop, exitoso)     ──download artifact──> Environment dev
 CI(main, exitoso)        ──download artifact──> Environment qa
                                                    └──smoke tests──> evidencia QA por SHA
 QA Sign-off(run + SHA + referencia)
-                         ──validar smoke──> Environment qa-approval ──aprobación──> sign-off
+                         ──validar smoke──> Environment qa-signoff ──aprobación──> sign-off
 sign-off exitoso
                          ──resolver candidato automáticamente──> Environment prod ──aprobación──> deploy
 ```
 
 El CD no ejecuta `dotnet build` ni `dotnet publish`. Descarga el artefacto creado por el run indicado y comprueba que contenga la DLL. Después de desplegar a QA, inicia esa aplicación y valida `/health`, `/environment` y `/version`. Solo si las respuestas coinciden con el ambiente, versión, SHA y rama esperados publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`.
 
-Cuando terminan las pruebas funcionales, QA inicia `QA Sign-off` con run de CI, SHA y referencia al plan o ticket. El workflow verifica primero CI y smoke evidence; solo un candidato técnicamente válido solicita la aprobación de `qa-approval` y publica `qa-signoff-<SHA>-<CI_RUN_ID>`.
+Cuando terminan las pruebas funcionales, QA inicia `QA Sign-off` con run de CI, SHA y referencia al plan o ticket. El workflow verifica primero CI y smoke evidence; solo un candidato técnicamente válido solicita la aprobación de `qa-signoff` y publica `qa-signoff-<SHA>-<CI_RUN_ID>`.
 
 DEV cancela un deployment en curso cuando aparece otro más reciente, porque interesa reflejar con rapidez el estado actual de `develop`. QA y PROD no cancelan deployments iniciados: sus ejecuciones conservan la evidencia y las decisiones de promoción asociadas a cada candidato.
 

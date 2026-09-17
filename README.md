@@ -41,7 +41,7 @@ La automatización actual es deliberadamente mínima: implementa build, pruebas 
 
 - `ci.yml`: restaura, compila, prueba y publica resultados. Solo los pushes a `develop` y `main` generan el artefacto desplegable `application-<sha>`.
 - `cd.yml`: tras CI exitoso despliega `develop` a DEV y `main` a QA. QA ejecuta smoke tests y registra evidencia técnica por SHA y run de CI. PROD exige CI, smoke tests y sign-off funcional para la misma identidad antes de solicitar aprobación.
-- `qa-signoff.yml`: registra la aprobación funcional manual mediante el Environment protegido `qa-approval`.
+- `qa-signoff.yml`: registra la aprobación funcional manual mediante el Environment protegido `qa-signoff`.
 - `promote-prod.yml`: toma automáticamente la evidencia del sign-off y solicita aprobación en `prod`, sin pedir al operador run ID ni SHA.
 - `pr-policy.yml`: valida las combinaciones permitidas de rama origen/destino y el origen de correcciones QA y hotfixes.
 - `deploy.yml`: reutiliza el mismo artefacto, enlaza el job al GitHub Environment y escribe trazabilidad en el Job Summary.
@@ -50,7 +50,7 @@ La promoción a PROD se inicia automáticamente después de un sign-off QA exito
 
 ## Configuración de GitHub
 
-Crear manualmente los destinos `dev`, `qa` y `prod`, además de la puerta de gobernanza `qa-approval`. En los tres destinos definir `APP_ENVIRONMENT` y el secret ficticio `DEMO_DEPLOY_TOKEN`. Configurar required reviewers en `qa-approval` y `prod`, con restricción a `main`. Ningún valor secreto se registra o se incluye en el artefacto.
+Crear manualmente los destinos `dev`, `qa` y `prod`, además de la puerta de gobernanza `qa-signoff`. En los tres destinos definir `APP_ENVIRONMENT` y el secret ficticio `DEMO_DEPLOY_TOKEN`. Configurar required reviewers en `qa-signoff` y `prod`, con restricción a `main`. Ningún valor secreto se registra o se incluye en el artefacto.
 
 Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks `CI` y `PR Policy` exitosos. Los detalles y comandos de demo están en:
 
