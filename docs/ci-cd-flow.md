@@ -13,8 +13,8 @@ Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí 
 ## CD y promoción
 
 ```text
-CI(develop, mismo run)   ──reusable CD + artifact──> Environment dev
-CI(main, mismo run)      ──reusable CD + artifact──> Environment qa
+CI/CD Pipeline(develop)  ──job Deploy DEV + artifact──> Environment dev
+CI/CD Pipeline(main)     ──job Deploy QA + artifact───> Environment qa
                                                    └──smoke tests──> evidencia QA por SHA
 QA Sign-off(run + SHA + referencia)
                          ──validar smoke──> Environment qa-signoff ──aprobación──> sign-off
@@ -22,7 +22,7 @@ sign-off exitoso
                          ──resolver candidato automáticamente──> Environment prod ──aprobación──> deploy
 ```
 
-El CD no ejecuta `dotnet build` ni `dotnet publish`. CI lo invoca como reusable workflow después de publicar el artefacto; ambos forman parte del mismo run y conservan el `GITHUB_REF` original para las restricciones de `dev` y `qa`. CD descarga ese artefacto y comprueba que contenga la DLL. Después de desplegar a QA, inicia la aplicación y valida `/health`, `/environment` y `/version`. Solo si las respuestas coinciden publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>` en ese mismo run.
+Los jobs de deployment no ejecutan `dotnet build` ni `dotnet publish`. **CI/CD Pipeline** publica primero el artefacto y luego ejecuta `Deploy DEV` o `Deploy QA` en el mismo run, conservando el `GITHUB_REF` original para las restricciones de `dev` y `qa`. Una composite action compartida descarga el artefacto y comprueba que contenga la DLL. En QA también inicia la aplicación y valida `/health`, `/environment` y `/version`. Solo si las respuestas coinciden publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>` en ese mismo run.
 
 No se utiliza `workflow_run` entre CI y los deployments automáticos: ese evento siempre usa `GITHUB_REF` y `GITHUB_SHA` de la rama predeterminada, lo que impediría que una ejecución originada en `develop` satisfaga la branch policy de `dev`.
 
@@ -34,7 +34,7 @@ Un sign-off exitoso dispara `Promote PROD`. Este descarga la evidencia JSON de e
 
 ## Política de Pull Requests
 
-`PR Policy` convierte las rutas documentadas en un check ejecutable. Permite `feature/*` y `fix/*` hacia `develop`, `develop` hacia `main`, `fix/qa-*` y `hotfix/*` hacia `main`, y `main` hacia `develop` para resincronización. Las ramas de corrección QA y hotfix deben contener el estado actual de `main` y no pueden incluir merges de otra línea de desarrollo. El ruleset debe exigir este check junto con CI.
+`PR Policy` convierte las rutas documentadas en un check ejecutable. Permite `feature/*`, `fix/*` y `refactor/*` hacia `develop`, `develop` hacia `main`, `fix/qa-*` y `hotfix/*` hacia `main`, y `main` hacia `develop` para resincronización. Las ramas de corrección QA y hotfix deben contener el estado actual de `main` y no pueden incluir merges de otra línea de desarrollo. El ruleset debe exigir `Validate branch route` junto con `Build and test`.
 
 ## Fallas en QA
 
@@ -56,4 +56,4 @@ Cada job de deployment genera un resumen con aplicación, Environment, branch, S
 - Concurrencia de CI cancela ejecuciones obsoletas de una misma referencia.
 - Ninguna credencial cloud ni permisos `write` son necesarios.
 
-La reducción de configuración duplicada proviene de `deploy.yml`: los tres ambientes consumen el mismo contrato, pero GitHub inyecta variables, secrets y controles propios. Esto ofrece separación integración/promoción, trazabilidad, historial y gobernanza sin infraestructura real.
+La reducción de configuración duplicada proviene de `.github/actions/deploy/action.yml`: los tres ambientes consumen el mismo contrato, pero GitHub inyecta variables, secrets y controles propios. Al no ser un workflow, esta implementación compartida no agrega ejecuciones ni entradas a la lista de Actions.

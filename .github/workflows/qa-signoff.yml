@@ -41,7 +41,7 @@ jobs:
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPOSITORY/actions/runs/$CI_RUN_ID")
-          test "$(jq -r '.name' <<< "$CI_JSON")" = "CI"
+          test "$(jq -r '.name' <<< "$CI_JSON")" = "CI/CD Pipeline"
           test "$(jq -r '.conclusion' <<< "$CI_JSON")" = "success"
           test "$(jq -r '.head_branch' <<< "$CI_JSON")" = "main"
           test "$(jq -r '.head_sha' <<< "$CI_JSON")" = "$COMMIT_SHA"
