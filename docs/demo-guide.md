@@ -27,7 +27,7 @@ Abrir PR `develop → main`, aprobar y hacer merge. CI crea un artefacto nuevo p
 
 Abrir el job de QA y mostrar los smoke tests de `/health`, `/environment` y `/version`, además del artefacto `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`. Explicar que una falla genera diagnósticos, pero no evidencia técnica exitosa.
 
-Anotar el **run ID** de CI y el SHA de este commit: juntos identifican el candidato validado. Tras las pruebas manuales, ejecutar **QA Sign-off** desde `main`, introducir esos datos y una referencia ficticia como `TEST-PLAN-001`. Mostrar que el workflow valida el candidato antes de solicitar aprobación en `qa-approval` y que luego genera `qa-signoff-<SHA>-<CI_RUN_ID>`.
+Anotar el **run ID** de CI y el SHA de este commit: juntos identifican el candidato validado. Tras las pruebas manuales, ejecutar **QA Sign-off** desde `main`, introducir esos datos y una referencia ficticia como `TEST-PLAN-001`. Mostrar que el workflow valida el candidato antes de solicitar aprobación en `qa-signoff` y que luego genera `qa-signoff-<SHA>-<CI_RUN_ID>`.
 
 ## Escenario 3 — Producción
 

@@ -25,7 +25,7 @@ Se mantendrán dos ramas permanentes:
 - `develop`: integración de funcionalidades y correcciones; despliega automáticamente a DEV.
 - `main`: código estable, funcional y elegible para promoción; despliega automáticamente a QA y es el único origen permitido para PROD.
 
-Los ambientes no se representarán mediante ramas. Se utilizarán tres GitHub Environments de deployment: `dev`, `qa` y `prod`. Un cuarto Environment, `qa-approval`, funciona únicamente como puerta de gobernanza para el sign-off funcional y no representa infraestructura adicional.
+Los ambientes no se representarán mediante ramas. Se utilizarán tres GitHub Environments de deployment: `dev`, `qa` y `prod`. Un cuarto Environment, `qa-signoff`, funciona únicamente como puerta de gobernanza para el sign-off funcional y no representa infraestructura adicional.
 
 ```text
 feature/*, fix/*

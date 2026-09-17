@@ -71,7 +71,7 @@ jobs:
     name: Registrar aprobación funcional
     needs: validate-candidate
     runs-on: ubuntu-latest
-    environment: qa-approval
+    environment: qa-signoff
     steps:
       - name: Record approved functional sign-off
         env:
@@ -111,7 +111,7 @@ jobs:
             echo "| QA CD run | $SMOKE_RUN_ID |"
             echo "| Test reference | $TEST_REFERENCE |"
             echo "| Requested by | ${{ github.actor }} |"
-            echo "| Environment | qa-approval |"
+            echo "| Environment | qa-signoff |"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload functional QA sign-off
         uses: actions/upload-artifact@v4
