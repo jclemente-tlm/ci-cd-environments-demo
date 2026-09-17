@@ -27,15 +27,14 @@ Abrir PR `develop → main`, aprobar y hacer merge. **CI/CD Pipeline** crea un a
 
 Abrir el job de QA y mostrar los smoke tests de `/health`, `/environment` y `/version`, además del artefacto `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`. Explicar que una falla genera diagnósticos, pero no evidencia técnica exitosa.
 
-Anotar el **run ID** de CI y el SHA de este commit: juntos identifican el candidato validado. Tras las pruebas manuales, ejecutar **QA Sign-off** desde `main`, introducir esos datos y una referencia ficticia como `TEST-PLAN-001`. Mostrar que el workflow valida el candidato antes de solicitar aprobación en `qa-signoff` y que luego genera `qa-signoff-<SHA>-<CI_RUN_ID>`.
+Después de los smoke tests, mostrar que el job `Approve QA` permanece esperando en el Environment `qa-signoff`. El equipo ejecuta las pruebas manuales sobre ese candidato y, cuando concluye, selecciona **Review deployments → Approve and deploy**. No introduce identificadores técnicos.
 
 ## Escenario 3 — Producción
 
-1. Al terminar `QA Sign-off`, abrir la ejecución de **Promote PROD** iniciada automáticamente.
-2. Mostrar que el workflow recupera run de CI, SHA y versión desde la evidencia; el operador no los vuelve a introducir.
-3. Mostrar que valida nuevamente que el run fue CI exitoso sobre `main` y que el SHA coincide.
-4. Mostrar el job esperando aprobación del Environment `prod`.
-5. Un reviewer distinto aprueba; abrir el Summary y comprobar versión, SHA y timestamp.
+1. En la misma ejecución de **CI/CD Pipeline**, mostrar que `Deploy PROD` se habilita después de `Approve QA`.
+2. Mostrar el job esperando aprobación del Environment `prod`.
+3. Un reviewer distinto aprueba mediante **Review deployments → Approve and deploy**.
+4. Abrir el Summary y comprobar que versión, SHA y run coinciden con QA.
 
 La descarga por nombre `application-<SHA>` y run ID demuestra que PROD recibe el mismo binario validado, no una recompilación.
 
@@ -43,7 +42,7 @@ La descarga por nombre `application-<SHA>` y run ID demuestra que PROD recibe el
 
 1. Provocar temporalmente una expectativa incorrecta en uno de los smoke tests o utilizar un candidato defectuoso controlado.
 2. Mostrar que el job QA falla y publica `qa-diagnostics-*`, pero no `qa-smoke-evidence-*`.
-3. Intentar registrar el sign-off para ese SHA y mostrar que la validación termina antes de solicitar aprobación; por tanto, `Promote PROD` nunca se inicia.
+3. Mostrar que `Approve QA` y `Deploy PROD` quedan omitidos porque `Deploy QA` no concluyó exitosamente.
 4. Si es un defecto de código, crear `fix/qa-demo-failure` desde `main`, corregirlo y abrir PR hacia `main`.
 5. Mostrar el nuevo CI, artefacto y QA exitoso.
 6. Abrir después PR `main → develop` para sincronizar la corrección.

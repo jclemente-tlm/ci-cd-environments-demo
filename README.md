@@ -39,13 +39,10 @@ curl http://localhost:8080/environment
 
 La automatización actual es deliberadamente mínima: implementa build, pruebas unitarias, empaquetado, promoción y smoke tests de QA. Los controles empresariales adicionales descritos en la documentación, incluidos cobertura y escaneos de seguridad, representan el estado objetivo y todavía no se ejecutan.
 
-- `ci-cd-pipeline.yml`: define el único pipeline automático visible, **CI/CD Pipeline**. Compila y prueba todos los cambios; en pushes a `develop` o `main` también empaqueta el artefacto y ejecuta respectivamente `Deploy DEV` o `Deploy QA` dentro del mismo run.
-- `qa-signoff.yml`: registra la aprobación funcional manual mediante el Environment protegido `qa-signoff`.
-- `promote-prod.yml`: toma automáticamente la evidencia del sign-off y solicita aprobación en `prod`, sin pedir al operador run ID ni SHA.
-- `pr-policy.yml`: valida las combinaciones permitidas de rama origen/destino y el origen de correcciones QA y hotfixes.
+- `ci-cd-pipeline.yml`: es el único workflow. Valida rutas de PR, compila y prueba; en `develop` despliega a DEV y en `main` despliega a QA, espera el sign-off funcional y después la aprobación de PROD, todo dentro del mismo run.
 - `.github/actions/deploy/action.yml`: encapsula la descarga, simulación, trazabilidad y smoke tests compartidos sin aparecer como otro workflow en Actions.
 
-La promoción a PROD se inicia automáticamente después de un sign-off QA exitoso, pero el deployment queda esperando aprobación del Environment `prod`. La versión, el SHA y el run de CI se obtienen de evidencia estructurada y no son editables por el operador. La aprobación productiva es una puerta adicional, no un sustituto de QA.
+La promoción no solicita run ID, SHA, versión ni nombre de artefacto. El job `Approve QA` queda esperando en el Environment `qa-signoff`; al aprobarlo, `Deploy PROD` queda esperando la aprobación independiente de `prod`. Ambos conservan automáticamente la identidad del candidato creado al inicio del run.
 
 ## Configuración de GitHub
 
@@ -64,6 +61,6 @@ Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR
 
 GitHub Environments no se crean desde los workflows porque requiere permisos administrativos y ocultaría una parte importante de la demo. El pipeline tampoco recompila entre ambientes: QA y PROD reciben el artefacto identificado por el mismo SHA y run de CI. La versión es un metadato de promoción, no una compilación nueva.
 
-DEV y QA son jobs condicionales del mismo **CI/CD Pipeline**. Ambos reutilizan una composite action y conservan `GITHUB_REF` (`develop` o `main`) para que las deployment branch policies de los Environments se apliquen correctamente. `workflow_run` se reserva para `Promote PROD`, donde tanto el sign-off como el destino productivo utilizan `main`.
+DEV, QA, sign-off y PROD son jobs condicionales del mismo **CI/CD Pipeline**. Los deployments reutilizan una composite action y conservan `GITHUB_REF` (`develop` o `main`) para que las deployment branch policies se apliquen correctamente. No se utiliza `workflow_run` ni se copian identificadores manualmente.
 
 La rama permanente `qa` del modelo anterior `dev → qa → main` se reemplaza por el GitHub Environment `qa`. Las únicas ramas permanentes son `develop` y `main`; `main` contiene código promovible, mientras que el Environment `prod` registra qué versión está realmente desplegada.
