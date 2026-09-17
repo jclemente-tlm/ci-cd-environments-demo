@@ -33,15 +33,27 @@ jobs:
       - name: Simulate deployment
         env:
           APP_NAME: ci-cd-environments-demo
-          APP_ENVIRONMENT: ${{ vars.APP_ENVIRONMENT }}
+          APP_ENVIRONMENT: ${{ inputs.environment }}
           APP_VERSION: ${{ inputs.version }}
           APP_COMMIT_SHA: ${{ inputs.commit_sha }}
           APP_BRANCH: ${{ inputs.branch }}
           DEMO_DEPLOY_TOKEN: ${{ secrets.DEMO_DEPLOY_TOKEN }}
         run: |
-          test -n "$APP_ENVIRONMENT"
-          test -n "$DEMO_DEPLOY_TOKEN"
-          test -f artifact/Cicd.Demo.Api.dll
+          case "$APP_ENVIRONMENT" in
+            dev|qa|prod) ;;
+            *)
+              echo "::error::Unsupported deployment environment: $APP_ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          test -n "$DEMO_DEPLOY_TOKEN" || {
+            echo "::error::Missing DEMO_DEPLOY_TOKEN secret in Environment $APP_ENVIRONMENT"
+            exit 1
+          }
+          test -f artifact/Cicd.Demo.Api.dll || {
+            echo "::error::Artifact does not contain Cicd.Demo.Api.dll"
+            exit 1
+          }
           DEPLOYED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           {
             echo "## Deployment successful"
@@ -59,7 +71,7 @@ jobs:
       - name: Validate QA deployment
         if: inputs.validate_qa
         env:
-          APP_ENVIRONMENT: ${{ vars.APP_ENVIRONMENT }}
+          APP_ENVIRONMENT: ${{ inputs.environment }}
           APP_VERSION: ${{ inputs.version }}
           APP_COMMIT_SHA: ${{ inputs.commit_sha }}
           APP_BRANCH: ${{ inputs.branch }}
