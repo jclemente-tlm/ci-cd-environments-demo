@@ -20,6 +20,12 @@ app.MapGet("/version", () => Results.Ok(new
     deployment.Branch
 }));
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
+app.MapGet("/promotion", () => Results.Ok(new
+{
+    strategy = "build-once-promote-by-digest",
+    deployment.Version,
+    deployment.Commit
+}));
 
 app.Run();
 
