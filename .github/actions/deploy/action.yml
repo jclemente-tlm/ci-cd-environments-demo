@@ -8,6 +8,12 @@ inputs:
   artifact_run_id:
     description: Run containing the application artifact
     required: true
+  artifact_name:
+    description: Immutable candidate artifact name
+    required: true
+  artifact_digest:
+    description: Expected immutable candidate digest
+    required: true
   commit_sha:
     description: Commit represented by the artifact
     required: true
@@ -31,10 +37,25 @@ runs:
     - name: Download the CI artifact (no rebuild)
       uses: actions/download-artifact@v4
       with:
-        name: application-${{ inputs.commit_sha }}
+        name: ${{ inputs.artifact_name }}
         path: artifact
         github-token: ${{ github.token }}
         run-id: ${{ inputs.artifact_run_id }}
+    - name: Verify candidate identity and integrity
+      shell: bash
+      env:
+        EXPECTED_DIGEST: ${{ inputs.artifact_digest }}
+        EXPECTED_SHA: ${{ inputs.commit_sha }}
+        EXPECTED_VERSION: ${{ inputs.version }}
+      run: |
+        test -f artifact/candidate.env
+        test -f artifact/checksums.sha256
+        ACTUAL_DIGEST="sha256:$(sha256sum artifact/checksums.sha256 | cut -d' ' -f1)"
+        test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
+        grep -Fxq "digest=$EXPECTED_DIGEST" artifact/candidate.env
+        grep -Fxq "source_sha=$EXPECTED_SHA" artifact/candidate.env
+        grep -Fxq "version=$EXPECTED_VERSION" artifact/candidate.env
+        (cd artifact/app && sha256sum --check ../checksums.sha256)
     - name: Simulate deployment
       shell: bash
       env:
@@ -56,7 +77,7 @@ runs:
           echo "::error::Missing DEMO_DEPLOY_TOKEN secret in Environment $APP_ENVIRONMENT"
           exit 1
         }
-        test -f artifact/Cicd.Demo.Api.dll || {
+        test -f artifact/app/Cicd.Demo.Api.dll || {
           echo "::error::Artifact does not contain Cicd.Demo.Api.dll"
           exit 1
         }
@@ -70,6 +91,7 @@ runs:
           echo "| Branch | $APP_BRANCH |"
           echo "| Commit | $APP_COMMIT_SHA |"
           echo "| Version | $APP_VERSION |"
+          echo "| Artifact digest | ${{ inputs.artifact_digest }} |"
           echo "| Deployed at | $DEPLOYED_AT |"
           echo "| Artifact source run | ${{ inputs.artifact_run_id }} |"
         } >> "$GITHUB_STEP_SUMMARY"
@@ -84,7 +106,7 @@ runs:
         APP_DEPLOYED_AT: ${{ github.run_id }}
       run: |
         test "$APP_ENVIRONMENT" = "qa"
-        ASPNETCORE_URLS=http://127.0.0.1:5088 dotnet artifact/Cicd.Demo.Api.dll > qa-api.log 2>&1 &
+        ASPNETCORE_URLS=http://127.0.0.1:5088 dotnet artifact/app/Cicd.Demo.Api.dll > qa-api.log 2>&1 &
         API_PID=$!
         trap 'kill "$API_PID" 2>/dev/null || true' EXIT
 
@@ -105,12 +127,13 @@ runs:
         curl --fail --silent http://127.0.0.1:5088/version > version.json
         test "$(jq -r '.version' version.json)" = "$APP_VERSION"
         test "$(jq -r '.commit' version.json)" = "$APP_COMMIT_SHA"
-        test "$(jq -r '.branch' version.json)" = "main"
+        test "$(jq -r '.branch' version.json)" = "$APP_BRANCH"
 
         printf '%s\n' \
           "commit=$APP_COMMIT_SHA" \
           "version=$APP_VERSION" \
           "branch=$APP_BRANCH" \
+          "digest=${{ inputs.artifact_digest }}" \
           "ci_run=${{ inputs.artifact_run_id }}" > qa-smoke-evidence.txt
     - name: Record successful QA evidence
       if: inputs.validate_qa == 'true'

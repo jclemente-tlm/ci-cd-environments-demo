@@ -5,7 +5,7 @@
 .idea/
 TestResults/
 artifacts/
+references/
 .env
 *.user
 *.suo
-

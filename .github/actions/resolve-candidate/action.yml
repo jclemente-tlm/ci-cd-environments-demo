@@ -1,0 +1,86 @@
+name: Resolve immutable candidate
+description: Finds the successful CI run and immutable artifact for an exact source commit.
+
+inputs:
+  commit_sha:
+    description: Exact source commit represented by the candidate
+    required: true
+
+outputs:
+  artifact_run_id:
+    description: Successful CI run containing the candidate
+    value: ${{ steps.metadata.outputs.run_id }}
+  artifact_name:
+    description: Immutable artifact name
+    value: ${{ steps.metadata.outputs.artifact_name }}
+  artifact_digest:
+    description: Candidate digest recorded during CI
+    value: ${{ steps.metadata.outputs.digest }}
+  version:
+    description: Candidate version recorded during CI
+    value: ${{ steps.metadata.outputs.version }}
+  source_branch:
+    description: Branch that originally produced the candidate
+    value: ${{ steps.metadata.outputs.source_branch }}
+
+runs:
+  using: composite
+  steps:
+    - name: Find the immutable candidate artifact
+      id: lookup
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SOURCE_SHA: ${{ inputs.commit_sha }}
+      run: |
+        RUN_ID=$(gh api \
+          "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=candidate-${SOURCE_SHA}&per_page=100" \
+          --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .workflow_run.id // empty')
+        test -n "$RUN_ID" || {
+          echo "::error::No non-expired candidate artifact exists for commit $SOURCE_SHA"
+          exit 1
+        }
+        RUN_METADATA=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" \
+          --jq '[.head_sha, .event, .conclusion, .path] | @tsv')
+        IFS=$'\t' read -r RUN_SHA RUN_EVENT RUN_CONCLUSION RUN_PATH <<< "$RUN_METADATA"
+        test "$RUN_SHA" = "$SOURCE_SHA"
+        test "$RUN_EVENT" = "push"
+        test "$RUN_CONCLUSION" = "success"
+        case "$RUN_PATH" in
+          .github/workflows/ci-cd-pipeline.yml|.github/workflows/ci-cd-pipeline.yml@*) ;;
+          *)
+            echo "::error::Candidate artifact was not produced by the trusted CI workflow"
+            exit 1
+            ;;
+        esac
+        echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+    - name: Download candidate metadata
+      uses: actions/download-artifact@v4
+      with:
+        name: candidate-${{ inputs.commit_sha }}
+        path: resolved-candidate
+        github-token: ${{ github.token }}
+        run-id: ${{ steps.lookup.outputs.run_id }}
+    - name: Validate and expose candidate metadata
+      id: metadata
+      shell: bash
+      env:
+        EXPECTED_SHA: ${{ inputs.commit_sha }}
+        RESOLVED_RUN_ID: ${{ steps.lookup.outputs.run_id }}
+      run: |
+        METADATA=resolved-candidate/candidate.env
+        test -f "$METADATA"
+        grep -Fxq "source_sha=$EXPECTED_SHA" "$METADATA"
+        DIGEST=$(sed -n 's/^digest=//p' "$METADATA")
+        VERSION=$(sed -n 's/^version=//p' "$METADATA")
+        SOURCE_BRANCH=$(sed -n 's/^source_branch=//p' "$METADATA")
+        test -n "$DIGEST"
+        test -n "$VERSION"
+        test -n "$SOURCE_BRANCH"
+        {
+          echo "run_id=$RESOLVED_RUN_ID"
+          echo "artifact_name=candidate-$EXPECTED_SHA"
+          echo "digest=$DIGEST"
+          echo "version=$VERSION"
+          echo "source_branch=$SOURCE_BRANCH"
+        } >> "$GITHUB_OUTPUT"
