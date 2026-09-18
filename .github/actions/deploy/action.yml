@@ -129,6 +129,11 @@ runs:
         test "$(jq -r '.commit' version.json)" = "$APP_COMMIT_SHA"
         test "$(jq -r '.branch' version.json)" = "$APP_BRANCH"
 
+        curl --fail --silent http://127.0.0.1:5088/promotion > promotion.json
+        test "$(jq -r '.strategy' promotion.json)" = "build-once-promote-by-digest"
+        test "$(jq -r '.version' promotion.json)" = "$APP_VERSION"
+        test "$(jq -r '.commit' promotion.json)" = "$APP_COMMIT_SHA"
+
         printf '%s\n' \
           "commit=$APP_COMMIT_SHA" \
           "version=$APP_VERSION" \
