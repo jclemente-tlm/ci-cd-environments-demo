@@ -32,13 +32,22 @@ jobs:
           HEAD_BRANCH: ${{ github.head_ref }}
         run: |
           case "$BASE_BRANCH:$HEAD_BRANCH" in
-            develop:feature/*|develop:fix/*|develop:refactor/*|develop:sync/*|develop:main|main:release/*|main:hotfix/*)
+            develop:feature/*|develop:fix/*|develop:refactor/*|develop:sync/*|develop:main|main:develop|main:release/*|main:hotfix/*)
               ;;
             *)
               echo "Ruta de PR no permitida: $HEAD_BRANCH -> $BASE_BRANCH" >&2
               exit 1
               ;;
           esac
+
+          if [[ "$BASE_BRANCH:$HEAD_BRANCH" == "main:develop" ]]; then
+            git fetch --no-tags origin main
+            if git cat-file -e origin/main:.github/actions/resolve-candidate/action.yml 2>/dev/null; then
+              echo "La instalación inicial ya terminó; use release/* o hotfix/* para integrar en main." >&2
+              exit 1
+            fi
+            echo "Bootstrap permitido: main todavía no contiene las acciones confiables de promoción."
+          fi
 
           if [[ "$HEAD_BRANCH" == release/* || "$HEAD_BRANCH" == hotfix/* ]]; then
             git fetch --no-tags origin main
