@@ -7,6 +7,12 @@ namespace Cicd.Demo.Api.Tests;
 public sealed class DeploymentInfoTests
 {
     [Fact]
+    public void PromotionStrategy_UsesImmutableArtifactIdentity()
+    {
+        Assert.Equal("build-once-promote-by-digest", Promotion.Strategy);
+    }
+
+    [Fact]
     public void FromConfiguration_UsesPipelineValues()
     {
         var values = new Dictionary<string, string?>
