@@ -6,6 +6,6 @@
 TestResults/
 artifacts/
 .env
+references/
 *.user
 *.suo
-

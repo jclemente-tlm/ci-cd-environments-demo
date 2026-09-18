@@ -16,25 +16,24 @@ Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí 
 CI/CD Pipeline(develop)  ──job Deploy DEV + artifact──> Environment dev
 CI/CD Pipeline(main)     ──job Deploy QA + artifact───> Environment qa
                                                    └──smoke tests──> evidencia QA por SHA
-QA Sign-off(run + SHA + referencia)
-                         ──validar smoke──> Environment qa-signoff ──aprobación──> sign-off
-sign-off exitoso
-                         ──resolver candidato automáticamente──> Environment prod ──aprobación──> deploy
+                                                   └──job Approve QA ──> Environment qa-signoff
+                                                         └──aprobación──> job Deploy PROD
+                                                               └──Environment prod──aprobación──> deploy
 ```
 
 Los jobs de deployment no ejecutan `dotnet build` ni `dotnet publish`. **CI/CD Pipeline** publica primero el artefacto y luego ejecuta `Deploy DEV` o `Deploy QA` en el mismo run, conservando el `GITHUB_REF` original para las restricciones de `dev` y `qa`. Una composite action compartida descarga el artefacto y comprueba que contenga la DLL. En QA también inicia la aplicación y valida `/health`, `/environment` y `/version`. Solo si las respuestas coinciden publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>` en ese mismo run.
 
-No se utiliza `workflow_run` entre CI y los deployments automáticos: ese evento siempre usa `GITHUB_REF` y `GITHUB_SHA` de la rama predeterminada, lo que impediría que una ejecución originada en `develop` satisfaga la branch policy de `dev`.
+No se utiliza `workflow_run`: todos los jobs pertenecen a la misma ejecución y conservan el `GITHUB_REF`, el SHA, la versión y el artefacto originales.
 
-Cuando terminan las pruebas funcionales, QA inicia `QA Sign-off` con run de CI, SHA y referencia al plan o ticket. El workflow verifica primero CI y smoke evidence; solo un candidato técnicamente válido solicita la aprobación de `qa-signoff` y publica `qa-signoff-<SHA>-<CI_RUN_ID>`.
+Después de los smoke tests, el job `Approve QA` queda esperando la autorización del Environment `qa-signoff`. El equipo realiza sus pruebas funcionales sobre el deployment existente y aprueba el job cuando concluye. No introduce run ID, SHA ni otros datos técnicos.
 
 DEV cancela un deployment en curso cuando aparece otro más reciente, porque interesa reflejar con rapidez el estado actual de `develop`. QA y PROD no cancelan deployments iniciados: sus ejecuciones conservan la evidencia y las decisiones de promoción asociadas a cada candidato.
 
-Un sign-off exitoso dispara `Promote PROD`. Este descarga la evidencia JSON de esa ejecución, recupera run de CI, SHA y versión, y vuelve a comprobar que CI fue exitoso sobre `main`. Después solicita la aprobación de `prod`. La versión `0.1.0-<CI run ID>` es idéntica en QA, sign-off y PROD; el operador no copia ni puede sobrescribir identificadores técnicos.
+Un sign-off exitoso habilita `Deploy PROD` en ese mismo run. El job solicita la aprobación de `prod` y, después de recibirla, descarga el artefacto ya validado. La versión `0.1.0-<run ID>` es idéntica en QA y PROD; el operador no copia ni puede sobrescribir identificadores técnicos.
 
 ## Política de Pull Requests
 
-`PR Policy` convierte las rutas documentadas en un check ejecutable. Permite `feature/*`, `fix/*` y `refactor/*` hacia `develop`, `develop` hacia `main`, `fix/qa-*` y `hotfix/*` hacia `main`, y `main` hacia `develop` para resincronización. Las ramas de corrección QA y hotfix deben contener el estado actual de `main` y no pueden incluir merges de otra línea de desarrollo. El ruleset debe exigir `Validate branch route` junto con `Build and test`.
+El job `Validate branch route` convierte las rutas documentadas en un check ejecutable dentro del mismo pipeline. Permite `feature/*`, `fix/*` y `refactor/*` hacia `develop`, `develop` hacia `main`, `fix/qa-*` y `hotfix/*` hacia `main`, y `main` hacia `develop` para resincronización. Las ramas de corrección QA y hotfix deben contener el estado actual de `main` y no pueden incluir merges de otra línea de desarrollo.
 
 ## Fallas en QA
 

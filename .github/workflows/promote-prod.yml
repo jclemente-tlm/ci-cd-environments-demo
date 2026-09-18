@@ -52,9 +52,11 @@ jobs:
           test "$(jq -r '.head_sha' <<< "$CI_JSON")" = "$COMMIT_SHA"
           test "$VERSION" = "0.1.0-$CI_RUN_ID"
 
-          echo "ci_run_id=$CI_RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "ci_run_id=$CI_RUN_ID"
+            echo "commit_sha=$COMMIT_SHA"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
 
   deploy-prod:
     needs: resolve-candidate
