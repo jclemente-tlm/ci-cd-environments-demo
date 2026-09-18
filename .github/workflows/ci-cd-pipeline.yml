@@ -1,8 +1,8 @@
-name: CI/CD Pipeline
+name: CI and DEV
 
 on:
   push:
-    branches: [main, develop, 'feature/**', 'fix/**', 'hotfix/**', 'refactor/**']
+    branches: [main, develop, 'feature/**', 'fix/**', 'hotfix/**', 'refactor/**', 'release/**']
     paths-ignore: ['**/*.md', 'docs/**']
   pull_request:
     branches: [main, develop]
@@ -32,37 +32,47 @@ jobs:
           HEAD_BRANCH: ${{ github.head_ref }}
         run: |
           case "$BASE_BRANCH:$HEAD_BRANCH" in
-            develop:feature/*|develop:fix/*|develop:refactor/*|develop:main|main:develop|main:fix/qa-*|main:hotfix/*)
+            develop:feature/*|develop:fix/*|develop:refactor/*|develop:sync/*|develop:main|main:develop|main:release/*|main:hotfix/*)
               ;;
             *)
-              echo "Unsupported PR route: $HEAD_BRANCH -> $BASE_BRANCH" >&2
+              echo "Ruta de PR no permitida: $HEAD_BRANCH -> $BASE_BRANCH" >&2
               exit 1
               ;;
           esac
 
-          if [ "$BASE_BRANCH" = "develop" ] && [[ "$HEAD_BRANCH" == fix/qa-* ]]; then
-            echo "QA corrections must enter develop through main." >&2
-            exit 1
+          if [[ "$BASE_BRANCH:$HEAD_BRANCH" == "main:develop" ]]; then
+            git fetch --no-tags origin main
+            if git cat-file -e origin/main:.github/actions/resolve-candidate/action.yml 2>/dev/null; then
+              echo "La instalación inicial ya terminó; use release/* o hotfix/* para integrar en main." >&2
+              exit 1
+            fi
+            echo "Bootstrap permitido: main todavía no contiene las acciones confiables de promoción."
           fi
 
-          if [[ "$HEAD_BRANCH" == fix/qa-* || "$HEAD_BRANCH" == hotfix/* ]]; then
+          if [[ "$HEAD_BRANCH" == release/* || "$HEAD_BRANCH" == hotfix/* ]]; then
             git fetch --no-tags origin main
             git merge-base --is-ancestor origin/main HEAD || {
-              echo "$HEAD_BRANCH must include the current main branch." >&2
+              echo "$HEAD_BRANCH debe incluir el estado actual de main." >&2
               exit 1
             }
+          fi
 
+          if [[ "$HEAD_BRANCH" == hotfix/* ]]; then
             if git rev-list --merges origin/main..HEAD | grep -q .; then
-              echo "$HEAD_BRANCH must not merge another development line." >&2
+              echo "$HEAD_BRANCH no debe contener merges de otra línea de desarrollo." >&2
               exit 1
             fi
           fi
 
-          echo "Allowed PR route: $HEAD_BRANCH -> $BASE_BRANCH"
+          echo "Ruta de PR permitida: $HEAD_BRANCH -> $BASE_BRANCH"
 
   build-test-package:
     name: Build and test
     runs-on: ubuntu-latest
+    outputs:
+      artifact_digest: ${{ steps.identity.outputs.digest }}
+      artifact_name: ${{ steps.identity.outputs.name }}
+      version: ${{ steps.identity.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -86,23 +96,47 @@ jobs:
       - name: Package deployable application
         if: >-
           github.event_name == 'push' &&
-          (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+          (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
         run: dotnet publish src/Cicd.Demo.Api/Cicd.Demo.Api.csproj --configuration Release --no-build --output artifacts/app /p:UseAppHost=false
+      - name: Create immutable candidate identity
+        id: identity
+        if: >-
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
+        shell: bash
+        run: |
+          (
+            cd artifacts/app
+            find . -type f -print0 | sort -z | xargs -0 sha256sum
+          ) > artifacts/checksums.sha256
+          DIGEST="sha256:$(sha256sum artifacts/checksums.sha256 | cut -d' ' -f1)"
+          VERSION="0.1.0-${GITHUB_RUN_ID}"
+          ARTIFACT_NAME="candidate-${GITHUB_SHA}"
+          printf 'source_sha=%s\nsource_branch=%s\nsource_run=%s\nversion=%s\ndigest=%s\n' \
+            "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$VERSION" "$DIGEST" \
+            > artifacts/candidate.env
+          {
+            echo "digest=$DIGEST"
+            echo "version=$VERSION"
+            echo "name=$ARTIFACT_NAME"
+          } >> "$GITHUB_OUTPUT"
       - name: Upload immutable build artifact
         if: >-
           github.event_name == 'push' &&
-          (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+          (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
         uses: actions/upload-artifact@v4
         with:
-          name: application-${{ github.sha }}
-          path: artifacts/app
+          name: ${{ steps.identity.outputs.name }}
+          path: artifacts
           if-no-files-found: error
           retention-days: 30
 
   deploy-dev:
     name: Deploy DEV
     needs: build-test-package
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
     runs-on: ubuntu-latest
     environment: dev
     concurrency:
@@ -114,70 +148,9 @@ jobs:
         with:
           environment: dev
           artifact_run_id: ${{ github.run_id }}
+          artifact_name: ${{ needs.build-test-package.outputs.artifact_name }}
+          artifact_digest: ${{ needs.build-test-package.outputs.artifact_digest }}
           commit_sha: ${{ github.sha }}
           branch: ${{ github.ref_name }}
-          version: 0.1.0-${{ github.run_id }}
-          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
-
-  deploy-qa:
-    name: Deploy QA
-    needs: build-test-package
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: qa
-    concurrency:
-      group: deployment-qa
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/deploy
-        with:
-          environment: qa
-          artifact_run_id: ${{ github.run_id }}
-          commit_sha: ${{ github.sha }}
-          branch: ${{ github.ref_name }}
-          version: 0.1.0-${{ github.run_id }}
-          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
-          validate_qa: 'true'
-
-  qa-signoff:
-    name: Approve QA
-    needs: deploy-qa
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: qa-signoff
-    concurrency:
-      group: approval-qa
-      cancel-in-progress: false
-    steps:
-      - name: Record QA approval
-        run: |
-          {
-            echo "## QA sign-off approved"
-            echo "| Field | Value |"
-            echo "|---|---|"
-            echo "| Commit | $GITHUB_SHA |"
-            echo "| Version | 0.1.0-$GITHUB_RUN_ID |"
-            echo "| Branch | $GITHUB_REF_NAME |"
-            echo "| Pipeline run | $GITHUB_RUN_ID |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  deploy-prod:
-    name: Deploy PROD
-    needs: qa-signoff
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: prod
-    concurrency:
-      group: deployment-prod
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/deploy
-        with:
-          environment: prod
-          artifact_run_id: ${{ github.run_id }}
-          commit_sha: ${{ github.sha }}
-          branch: ${{ github.ref_name }}
-          version: 0.1.0-${{ github.run_id }}
+          version: ${{ needs.build-test-package.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
