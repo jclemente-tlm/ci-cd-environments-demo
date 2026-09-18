@@ -4,7 +4,7 @@
 
 Este documento define el flujo objetivo empresarial para validación, construcción, publicación y promoción. La regla central es:
 
-> Los Pull Requests validan cambios; las ramas permanentes validan el estado integrado y producen artefactos desplegables.
+> Los Pull Requests validan cambios; `develop` produce el candidato integrado y los workflows de release promueven esa misma identidad sin reconstruirla.
 
 La PoC implementa actualmente build, pruebas unitarias, empaquetado, almacenamiento del artefacto y smoke tests de QA. SAST, SCA, secret scanning, container scanning e IaC scanning forman parte del flujo objetivo y deben incorporarse con las herramientas aprobadas por la organización.
 
@@ -46,45 +46,18 @@ develop
 └── CD — DEV
     ├── desplegar automáticamente el artefacto de develop
     └── habilitar validación integrada de funcionalidades
-        ↓ PR de promoción; desarrollo puede continuar
-PR develop → main
-└── CI — validación de promoción
-    ├── revisión de promoción
-    ├── build de la solución
-    ├── pruebas unitarias y cobertura
-    ├── SAST de seguridad (Semgrep)
-    ├── análisis de calidad (SonarQube)
-    ├── SCA/dependency scanning (OWASP Dependency Check)
-    ├── secret scanning (Gitleaks)
-    ├── lint del Dockerfile (Hadolint)
-    ├── análisis de imagen de contenedor (Trivy Image)
-    ├── IaC scanning (Checkov), cuando exista IaC
-    ├── validación del título del PR/Conventional Commits
-    ├── publicar reportes y resúmenes
-    └── no publicar ni desplegar desde el PR
-        ↓ merge
-main
-├── CI — candidato oficial
-│   ├── build de la solución
-│   ├── pruebas unitarias y cobertura
-│   ├── SAST de seguridad (Semgrep)
-│   ├── análisis de calidad (SonarQube)
-│   ├── SCA/dependency scanning (OWASP Dependency Check)
-│   ├── secret scanning (Gitleaks)
-│   ├── lint del Dockerfile (Hadolint)
-│   ├── IaC scanning (Checkov), cuando exista IaC
-│   ├── construir candidato oficial inmutable
-│   ├── análisis de imagen de contenedor (Trivy Image)
-│   ├── publicar reportes y resúmenes
-│   ├── resolver versión/release
-│   └── publicar por SHA/versión/digest
-└── CD — QA
-    ├── desplegar automáticamente el candidato
+        ↓ aprobación de promoción
+release/<versión> (desde el SHA candidato) ──PR abierto──> main
+        ↓
+CD — QA
+    ├── desplegar exactamente el digest validado en DEV
     └── ejecutar smoke tests automáticos
         ↓
-QA — validación funcional
+QA — validación funcional; el PR permanece abierto
 ├── ejecutar pruebas funcionales manuales
 └── QA sign-off para el SHA/digest exacto
+    ↓
+merge del PR en main; validar correspondencia con el digest y no reconstruir
     ↓
 GATE — PROD
 └── aprobación productiva
@@ -95,7 +68,7 @@ CD — PROD
 
 ## Matriz de controles
 
-| Control | PR a `develop` | Merge en `develop` | PR `develop → main` | Merge en `main` |
+| Control | PR a `develop` | Merge en `develop` | PR `release/* → main` | Merge en `main` |
 |---|:---:|:---:|:---:|:---:|
 | Build | Sí | Sí | Sí | Sí |
 | Pruebas unitarias | Sí | Sí | Sí | Sí |
@@ -106,13 +79,13 @@ CD — PROD
 | Secret scanning | Sí | Sí | Sí | Sí |
 | Lint del Dockerfile | Sí | Sí | Sí | Sí |
 | IaC scanning, cuando exista IaC | Sí | Sí | Sí | Sí |
-| Construir artefacto desplegable | No | Sí | No | Sí |
+| Construir artefacto desplegable | No | Sí | No | No |
 | Análisis de imagen de contenedor (Trivy) | Sí | Sí | Sí | Sí |
 | Reportes y resúmenes | Sí | Sí | Sí | Sí |
 | Validación semántica del PR | Sí | No aplica | Sí | No aplica |
-| Publicar artefacto/imagen | No | Sí, desarrollo | No | Sí, candidato oficial |
-| Deployment | No | DEV | No | QA |
-| Elegible para PROD | No | No | No | Solo después de QA sign-off |
+| Publicar artefacto/imagen | No | Sí, candidato inmutable | No | No |
+| Deployment | No | DEV | QA | PROD después de aprobación |
+| Elegible para PROD | No | No | Después de deployment, smoke tests y sign-off | El merge inicia la promoción |
 
 Los controles se repiten después del merge porque el commit integrado no es necesariamente idéntico al commit validado en el PR y puede incluir interacciones con otros cambios ya fusionados.
 
@@ -195,23 +168,23 @@ application:develop        # alias móvil opcional
 
 - `dev-<sha>` es inmutable y debe utilizarse para trazabilidad.
 - `develop` puede ser un alias móvil para conveniencia, pero no constituye identidad suficiente para auditar un deployment.
-- Tiene retención más corta y no puede promoverse a PROD.
-- Su finalidad es validar integración y preparar el siguiente release.
+- Si es seleccionado y aprobado, este mismo digest puede promoverse hasta PROD.
+- Su finalidad es validar integración y convertirse en candidato sin reconstrucción.
 
-## Artefactos de `main`
+## Registro en `main`
 
-Un merge en `main` genera el candidato oficial:
+Un merge en `main` no genera un candidato nuevo. Registra el código fuente asociado al candidato que ya recorrió los ambientes:
 
 ```text
-application:sha-<sha>
-application:<version>
-digest: sha256:<digest>
+source_sha: <sha-develop-seleccionado>
+version: <version>
+digest: sha256:<digest-promovido>
 ```
 
-QA y PROD deben utilizar el mismo digest:
+Todos los ambientes deben utilizar el mismo digest:
 
 ```text
-digest(QA) == digest(PROD)
+digest(DEV) == digest(QA) == digest(PROD)
 ```
 
 Los tags ayudan a localizar una imagen, pero el digest demuestra su identidad. CD no reconstruye, modifica ni reetiqueta contenido durante la promoción.
@@ -221,8 +194,8 @@ Los tags ayudan a localizar una imagen, pero el digest demuestra su identidad. C
 La rama `develop` permite continuar integrando el siguiente conjunto de cambios mientras `main` permanece como candidato bajo validación:
 
 ```text
-main:    versión 1.2.0 → QA → sign-off → PROD
-develop: funcionalidades integradas para 1.3.0 → DEV
+candidato fijado: versión 1.2.0 → PR abierto → QA → sign-off → merge main → PROD
+develop: nuevas funcionalidades para 1.3.0 → nuevos candidatos DEV
 ```
 
 Esta necesidad de estabilización paralela justifica mantener dos ramas permanentes en lugar de adoptar GitHub Flow puro con una única `main`.
@@ -231,13 +204,14 @@ Esta necesidad de estabilización paralela justifica mantener dos ramas permanen
 
 Los smoke tests demuestran salud técnica, pero no sustituyen las pruebas funcionales. Para promover a PROD se requieren evidencias independientes:
 
-1. CI exitoso para el commit de `main`.
-2. Artefacto oficial identificado por SHA y digest.
-3. Deployment QA y smoke tests exitosos.
-4. Sign-off funcional manual de QA para ese SHA.
-5. Aprobación productiva.
+1. CI exitoso y deployment DEV para el SHA de `develop`.
+2. Artefacto identificado por SHA y digest.
+3. Rama temporal desde el SHA candidato y PR abierto hacia `main`.
+4. Deployment QA del mismo digest y smoke tests exitosos.
+5. Sign-off funcional manual requerido para el HEAD y digest del PR, seguido del merge en `main`.
+6. Aprobación productiva y deployment del mismo digest.
 
-Si QA rechaza un candidato, este no obtiene sign-off y no puede llegar a PROD. Un defecto de código se corrige mediante `fix/qa-*` desde `main`, genera un nuevo SHA y repite el ciclo completo. Una falla exclusivamente ambiental permite reintentar el mismo artefacto.
+Si QA rechaza un candidato, este no obtiene sign-off y no puede llegar a PROD. Un defecto de código se corrige mediante PR a `develop`, genera un nuevo SHA y repite el ciclo desde DEV. Una falla exclusivamente ambiental permite reintentar el mismo artefacto.
 
 ## Implementación incremental
 
@@ -249,6 +223,6 @@ Si QA rechaza un candidato, este no obtiene sign-off y no puede llegar a PROD. U
 | Imagen Docker | Build local implementado | Publicación en GHCR/ECR/Artifactory/Nexus |
 | Smoke tests QA | Implementado | Ejecutarlos contra infraestructura real |
 | Semgrep/SCA/secrets/IaC/container scanning | Documentado | Seleccionar reglas, severidades y quality gates |
-| QA funcional manual | Sign-off protegido implementado | Integrar herramienta corporativa de pruebas si aplica |
+| QA funcional manual | Revisión requerida documentada; se configura en protección de `main` | Integrar herramienta corporativa de pruebas o check dedicado si aplica |
 | Aprobación PROD | Environment documentado | Integrar change management si aplica |
 | Digest y attestations | Documentado | Firma, SBOM y provenance |
