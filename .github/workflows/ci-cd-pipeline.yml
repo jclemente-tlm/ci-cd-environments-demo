@@ -2,11 +2,11 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [develop, 'hotfix/**']
+    branches: [main, develop, 'hotfix/**']
     paths-ignore: ['**/*.md', 'docs/**']
   pull_request:
     branches: [main, develop]
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
@@ -70,7 +70,7 @@ jobs:
 
   build-test-package:
     name: Build and test
-    if: github.event_name != 'pull_request' || github.event.action != 'closed'
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       artifact_digest: ${{ steps.identity.outputs.digest }}
@@ -229,28 +229,36 @@ jobs:
 
   resolve-prod-candidate:
     name: Resolve PROD candidate
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.action == 'closed' &&
-      github.event.pull_request.merged == true &&
-      (startsWith(github.event.pull_request.head.ref, 'release/') ||
-       startsWith(github.event.pull_request.head.ref, 'hotfix/'))
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       artifact_run_id: ${{ steps.candidate.outputs.artifact_run_id }}
       artifact_name: ${{ steps.candidate.outputs.artifact_name }}
       artifact_digest: ${{ steps.candidate.outputs.artifact_digest }}
       version: ${{ steps.candidate.outputs.version }}
+      source_sha: ${{ steps.release.outputs.source_sha }}
     steps:
       - name: Checkout trusted deployment actions
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+      - name: Identify the merged release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq 'map(select(.merged_at != null and .base.ref == "main" and ((.head.ref | startswith("release/")) or (.head.ref | startswith("hotfix/"))))) | first | [.head.sha, .head.ref] | @tsv')
+          test -n "$RELEASE"
+          IFS=$'\t' read -r SOURCE_SHA SOURCE_BRANCH <<< "$RELEASE"
+          {
+            echo "source_sha=$SOURCE_SHA"
+            echo "source_branch=$SOURCE_BRANCH"
+          } >> "$GITHUB_OUTPUT"
       - name: Resolve the artifact approved in QA
         id: candidate
         uses: ./.github/actions/resolve-candidate
         with:
-          commit_sha: ${{ github.event.pull_request.head.sha }}
+          commit_sha: ${{ steps.release.outputs.source_sha }}
 
   deploy-prod:
     name: Deploy PROD
@@ -263,15 +271,13 @@ jobs:
     steps:
       - name: Checkout trusted deployment actions
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
       - uses: ./.github/actions/deploy
         with:
           environment: prod
           artifact_run_id: ${{ needs.resolve-prod-candidate.outputs.artifact_run_id }}
           artifact_name: ${{ needs.resolve-prod-candidate.outputs.artifact_name }}
           artifact_digest: ${{ needs.resolve-prod-candidate.outputs.artifact_digest }}
-          commit_sha: ${{ github.event.pull_request.head.sha }}
+          commit_sha: ${{ needs.resolve-prod-candidate.outputs.source_sha }}
           branch: main
           version: ${{ needs.resolve-prod-candidate.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
