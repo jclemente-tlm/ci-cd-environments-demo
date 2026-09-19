@@ -1,25 +1,27 @@
-name: CI and DEV
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop, 'feature/**', 'fix/**', 'hotfix/**', 'refactor/**', 'release/**']
+    branches: [develop, 'hotfix/**']
     paths-ignore: ['**/*.md', 'docs/**']
   pull_request:
     branches: [main, develop]
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
 
 permissions:
   actions: read
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: pipeline-${{ github.ref }}
+  group: pipeline-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate-route:
     name: Validate branch route
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +70,7 @@ jobs:
 
   build-test-package:
     name: Build and test
+    if: github.event_name != 'pull_request' || github.event.action != 'closed'
     runs-on: ubuntu-latest
     outputs:
       artifact_digest: ${{ steps.identity.outputs.digest }}
@@ -153,4 +156,122 @@ jobs:
           commit_sha: ${{ github.sha }}
           branch: ${{ github.ref_name }}
           version: ${{ needs.build-test-package.outputs.version }}
+          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
+
+  resolve-qa-candidate:
+    name: Resolve QA candidate
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action != 'closed' &&
+      (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_run_id: ${{ steps.candidate.outputs.artifact_run_id }}
+      artifact_name: ${{ steps.candidate.outputs.artifact_name }}
+      artifact_digest: ${{ steps.candidate.outputs.artifact_digest }}
+      version: ${{ steps.candidate.outputs.version }}
+    steps:
+      - name: Checkout trusted deployment actions
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - name: Resolve the artifact built for the PR head
+        id: candidate
+        uses: ./.github/actions/resolve-candidate
+        with:
+          commit_sha: ${{ github.event.pull_request.head.sha }}
+
+  deploy-qa:
+    name: Deploy QA
+    needs: resolve-qa-candidate
+    runs-on: ubuntu-latest
+    environment: qa
+    concurrency:
+      group: deployment-qa
+      cancel-in-progress: false
+    steps:
+      - name: Checkout trusted deployment actions
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: ./.github/actions/deploy
+        with:
+          environment: qa
+          artifact_run_id: ${{ needs.resolve-qa-candidate.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.resolve-qa-candidate.outputs.artifact_name }}
+          artifact_digest: ${{ needs.resolve-qa-candidate.outputs.artifact_digest }}
+          commit_sha: ${{ github.event.pull_request.head.sha }}
+          branch: ${{ github.head_ref }}
+          version: ${{ needs.resolve-qa-candidate.outputs.version }}
+          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
+          validate_qa: 'true'
+
+  qa-ready:
+    name: QA deployment ready for functional testing
+    needs: [resolve-qa-candidate, deploy-qa]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record candidate under functional validation
+        env:
+          RELEASE_BRANCH: ${{ github.head_ref }}
+        run: |
+          {
+            echo "## Candidato listo en QA"
+            echo "| Campo | Valor |"
+            echo "|---|---|"
+            echo "| Pull request | #${{ github.event.pull_request.number }} |"
+            echo "| Rama de liberación | $RELEASE_BRANCH |"
+            echo "| Commit de origen | ${{ github.event.pull_request.head.sha }} |"
+            echo "| Versión | ${{ needs.resolve-qa-candidate.outputs.version }} |"
+            echo "| Digest del artefacto | ${{ needs.resolve-qa-candidate.outputs.artifact_digest }} |"
+            echo "| Ejecución de CI | ${{ needs.resolve-qa-candidate.outputs.artifact_run_id }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  resolve-prod-candidate:
+    name: Resolve PROD candidate
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      (startsWith(github.event.pull_request.head.ref, 'release/') ||
+       startsWith(github.event.pull_request.head.ref, 'hotfix/'))
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_run_id: ${{ steps.candidate.outputs.artifact_run_id }}
+      artifact_name: ${{ steps.candidate.outputs.artifact_name }}
+      artifact_digest: ${{ steps.candidate.outputs.artifact_digest }}
+      version: ${{ steps.candidate.outputs.version }}
+    steps:
+      - name: Checkout trusted deployment actions
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+      - name: Resolve the artifact approved in QA
+        id: candidate
+        uses: ./.github/actions/resolve-candidate
+        with:
+          commit_sha: ${{ github.event.pull_request.head.sha }}
+
+  deploy-prod:
+    name: Deploy PROD
+    needs: resolve-prod-candidate
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: deployment-prod
+      cancel-in-progress: false
+    steps:
+      - name: Checkout trusted deployment actions
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+      - uses: ./.github/actions/deploy
+        with:
+          environment: prod
+          artifact_run_id: ${{ needs.resolve-prod-candidate.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.resolve-prod-candidate.outputs.artifact_name }}
+          artifact_digest: ${{ needs.resolve-prod-candidate.outputs.artifact_digest }}
+          commit_sha: ${{ github.event.pull_request.head.sha }}
+          branch: main
+          version: ${{ needs.resolve-prod-candidate.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
