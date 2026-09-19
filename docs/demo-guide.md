@@ -36,7 +36,7 @@ git push -u origin release/v0.1.0-demo
 
 Abrir el PR `release/v0.1.0-demo → main` con el título `release: v0.1.0-demo`. Incluir versión, SHA, digest y run de CI. El PR debe permanecer abierto durante toda la validación funcional.
 
-Mostrar la ejecución de **CI/CD Pipeline** iniciada por el PR. `Resolve QA candidate` localiza automáticamente el artefacto creado previamente para el HEAD; después `Deploy QA` espera la aprobación del Environment `qa`. El aprobador revisa SHA, versión y digest y selecciona **Review deployments → Approve and deploy**.
+Mostrar la ejecución de **CI/CD Pipeline** iniciada por el PR. `Deploy QA` espera la aprobación del Environment `qa`. Después de aprobar, el mismo job localiza el artefacto creado previamente para el HEAD, verifica su identidad y lo despliega sin reconstruirlo.
 
 Abrir el job de QA y mostrar los smoke tests de `/health`, `/environment` y `/version`, además del artefacto `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`. Explicar que una falla genera diagnósticos, pero no evidencia técnica exitosa.
 
