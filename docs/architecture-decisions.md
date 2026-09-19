@@ -137,7 +137,7 @@ CI restaura dependencias, compila, prueba, empaqueta mediante `dotnet publish` y
 
 La palabra *publish* de .NET significa preparar los archivos desplegables; no significa desplegar a un ambiente. Para evitar ambigüedad, los pasos se denominan **Package deployable application** y **Upload immutable build artifact**.
 
-La separación se expresa mediante tres workflows: **CI and DEV** produce el candidato; **Release QA** se ejecuta para el PR release y termina después de deployment y smoke tests; **Release PROD** se ejecuta después del merge. La espera funcional vive en el PR y se registra como revisión requerida. Los deployments reutilizan acciones compuestas y conservan automáticamente run, SHA, versión, rama y digest.
+La separación se expresa mediante jobs condicionales de un único **CI/CD Pipeline**: el evento de `develop` produce el candidato, el PR release ejecuta QA y su merge ejecuta PROD. La espera funcional vive en el PR y se registra como revisión requerida. Los deployments reutilizan acciones compuestas y conservan automáticamente run, SHA, versión, rama y digest.
 
 ### Consecuencias
 
