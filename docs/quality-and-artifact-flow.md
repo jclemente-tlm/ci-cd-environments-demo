@@ -217,12 +217,12 @@ Si QA rechaza un candidato, este no obtiene sign-off y no puede llegar a PROD. U
 
 | Capacidad | PoC actual | Evolución empresarial |
 |---|---|---|
-| Build y unit tests | Implementado; 2 pruebas unitarias | Ampliar la suite y las políticas |
-| Medición de cobertura | No implementada | Generar reporte y definir umbral |
+| Build y unit tests | Implementado; 3 pruebas unitarias | Ampliar la suite y las políticas |
+| Medición de cobertura | Reporte OpenCover simulado, sin métrica real | Integrar Coverlet y definir umbral |
 | Artefacto .NET inmutable | Implementado con GitHub Artifacts | Registro empresarial |
 | Imagen Docker | Build local implementado | Publicación en GHCR/ECR/Artifactory/Nexus |
 | Smoke tests QA | Implementado | Ejecutarlos contra infraestructura real |
-| Semgrep/SCA/secrets/IaC/container scanning | Documentado | Seleccionar reglas, severidades y quality gates |
+| Semgrep/SCA/secrets/IaC/container scanning | Jobs simulados y marcados como `SIMULATED` | Instalar herramientas y seleccionar reglas, severidades y quality gates |
 | QA funcional manual | Revisión requerida documentada; se configura en protección de `main` | Integrar herramienta corporativa de pruebas o check dedicado si aplica |
 | Aprobación PROD | Environment documentado | Integrar change management si aplica |
 | Digest y attestations | Documentado | Firma, SBOM y provenance |
