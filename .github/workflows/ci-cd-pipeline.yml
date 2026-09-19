@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop, 'hotfix/**']
+    branches: [main, develop, 'feature/**', 'fix/**', 'hotfix/**']
     paths-ignore: ['**/*.md', 'docs/**']
   pull_request:
     branches: [main, develop]

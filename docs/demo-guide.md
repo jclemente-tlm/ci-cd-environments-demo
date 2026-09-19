@@ -19,7 +19,9 @@ git switch -c feature/demo-change
 git push -u origin feature/demo-change
 ```
 
-Abrir PR `feature/demo-change → develop`, mostrar los checks `Build and test` y `Validate branch route`, y hacer merge. En Actions, abrir la ejecución **CI/CD Pipeline** del push y mostrar `Build and test` y `Deploy DEV`. El Summary debe indicar Environment, SHA, versión, digest y run de origen. La página de `dev` conserva el deployment.
+Primero, mostrar que el push ejecuta `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`, pero no genera un candidato ni despliega en ningún ambiente. Esto proporciona feedback inmediato antes del PR.
+
+Abrir PR `feature/demo-change → develop`, mostrar nuevamente las validaciones junto con `Validate branch route`, y hacer merge. En Actions, abrir la ejecución **CI/CD Pipeline** del push integrado a `develop` y mostrar las validaciones, la creación del candidato y `Deploy DEV`. El Summary debe indicar Environment, SHA, versión, digest y run de origen. La página de `dev` conserva el deployment.
 
 ## Escenario 2 — Promoción del mismo candidato a QA
 
