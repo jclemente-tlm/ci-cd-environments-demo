@@ -69,7 +69,7 @@ jobs:
           echo "Ruta de PR permitida: $HEAD_BRANCH -> $BASE_BRANCH"
 
   build-test-package:
-    name: Build and test
+    name: Build and unit tests
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
@@ -89,6 +89,15 @@ jobs:
         run: dotnet build --configuration Release --no-restore
       - name: Test
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory TestResults
+      - name: Generate simulated coverage report
+        shell: bash
+        run: |
+          mkdir -p reports/coverage
+          printf '%s\n' \
+            '<?xml version="1.0" encoding="utf-8"?>' \
+            '<CoverageSession simulated="true" line-rate="0.82" branch-rate="0.76" />' \
+            > reports/coverage/coverage.opencover.xml
+          echo "SIMULATED: reporte OpenCover generado para demostrar la entrada de SonarQube."
       - name: Publish test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -96,6 +105,12 @@ jobs:
           name: test-results-${{ github.run_id }}
           path: TestResults
           if-no-files-found: warn
+      - name: Publish simulated coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: reports/coverage/coverage.opencover.xml
+          if-no-files-found: error
       - name: Package deployable application
         if: >-
           github.event_name == 'push' &&
@@ -134,9 +149,81 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  code-quality:
+    name: Code quality
+    needs: build-test-package
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: reports/coverage
+      - name: Simulate SonarQube Quality Gate
+        shell: bash
+        run: |
+          test -s reports/coverage/coverage.opencover.xml
+          grep -q 'simulated="true"' reports/coverage/coverage.opencover.xml
+          {
+            echo "## Code quality — SIMULATED"
+            echo "- Coverage report: OpenCover disponible"
+            echo "- SonarQube Quality Gate: OK"
+            echo "- Política: block"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  security-checks:
+    name: Security checks
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Simulate Semgrep SAST
+        run: |
+          echo "SIMULATED: Semgrep SAST sin hallazgos bloqueantes."
+      - name: Simulate Gitleaks secret scanning
+        run: |
+          echo "SIMULATED: Gitleaks no detectó secretos."
+      - name: Simulate OWASP Dependency Check
+        run: |
+          echo "SIMULATED: Dependency Check sin vulnerabilidades críticas."
+      - name: Record simulated security results
+        run: |
+          {
+            echo "## Security checks — SIMULATED"
+            echo "- Semgrep: pass — block"
+            echo "- Gitleaks: pass — block"
+            echo "- Dependency Check: pass — crítico bloquea, alto advierte"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  delivery-checks:
+    name: Delivery checks
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Simulate Hadolint
+        run: |
+          echo "SIMULATED: Hadolint report only."
+      - name: Simulate Checkov IaC scan
+        run: |
+          echo "SIMULATED: Checkov sin hallazgos bloqueantes; no hay IaC real en la PoC."
+      - name: Simulate Trivy filesystem scan
+        run: |
+          echo "SIMULATED: Trivy FS report only; Trivy Image queda pendiente de una imagen Docker real."
+      - name: Record simulated delivery results
+        run: |
+          {
+            echo "## Delivery checks — SIMULATED"
+            echo "- Hadolint: report only"
+            echo "- Checkov: pass — block cuando exista IaC"
+            echo "- Trivy FS: report only"
+            echo "- Trivy Image: no aplicable hasta construir una imagen Docker"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy-dev:
     name: Deploy DEV
-    needs: build-test-package
+    needs: [build-test-package, code-quality, security-checks, delivery-checks]
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
@@ -160,6 +247,7 @@ jobs:
 
   resolve-qa-candidate:
     name: Resolve QA candidate
+    needs: [build-test-package, code-quality, security-checks, delivery-checks]
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action != 'closed' &&
