@@ -53,7 +53,7 @@ sequenceDiagram
     Registry->>Prod: Desplegar exactamente X
 ```
 
-Los jobs de deployment no ejecutan `dotnet build` ni `dotnet publish`. `CI and DEV` publica el candidato y termina después de desplegar DEV. `Release QA` resuelve el artefacto por el SHA del PR, recalcula su huella SHA-256, verifica el manifiesto y despliega QA. Después inicia la aplicación y valida `/health`, `/environment` y `/version`; solo si las respuestas coinciden publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>` y finaliza.
+Los jobs de deployment no ejecutan `dotnet build` ni `dotnet publish`. Una ejecución de `CI/CD Pipeline` publica el candidato y termina después de desplegar DEV. Otra ejecución del mismo workflow resuelve el artefacto por el SHA del PR, recalcula su huella SHA-256, verifica el manifiesto y despliega QA. Después inicia la aplicación y valida `/health`, `/environment` y `/version`; solo si las respuestas coinciden publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>` y finaliza.
 
 No se utiliza `workflow_run`. La acción `resolve-candidate` busca un artefacto no expirado llamado `candidate-<SHA>`, descarga sus metadatos y expone automáticamente run, versión y digest. El digest de la PoC representa el digest Docker que una implementación real resolvería desde ECR.
 
@@ -63,7 +63,7 @@ El sign-off se vincula al HEAD y al digest actuales del PR mediante la revisión
 
 DEV cancela un deployment obsoleto cuando aparece otro más reciente. En QA, actualizar el mismo PR cancela su workflow obsoleto, mientras candidatos distintos comparten una concurrencia global y no reemplazan silenciosamente el ambiente. PROD nunca cancela un deployment iniciado por otro release.
 
-Un sign-off exitoso habilita el merge del PR, no el deployment directo a PROD. El evento `pull_request: closed` con `merged == true` inicia `Release PROD`, recupera `pull_request.head.sha`, resuelve el digest aceptado por QA, solicita la aprobación de `prod` y despliega el mismo artefacto.
+Un sign-off exitoso habilita el merge del PR, no el deployment directo a PROD. El evento `pull_request: closed` con `merged == true` inicia los jobs de PROD del mismo workflow, recupera `pull_request.head.sha`, resuelve el digest aceptado por QA, solicita la aprobación de `prod` y despliega el mismo artefacto.
 
 Los workflows usan las acciones de deployment obtenidas desde la rama base protegida, no desde el código propuesto por el PR. Esto evita que una rama release modifique la lógica que recibirá secrets del Environment antes de ser fusionada.
 

@@ -19,7 +19,7 @@ git switch -c feature/demo-change
 git push -u origin feature/demo-change
 ```
 
-Abrir PR `feature/demo-change → develop`, mostrar los checks `Build and test` y `Validate branch route`, y hacer merge. En Actions, abrir la ejecución **CI and DEV** del push y mostrar `Build and test` y `Deploy DEV`. El Summary debe indicar Environment, SHA, versión, digest y run de origen. La página de `dev` conserva el deployment.
+Abrir PR `feature/demo-change → develop`, mostrar los checks `Build and test` y `Validate branch route`, y hacer merge. En Actions, abrir la ejecución **CI/CD Pipeline** del push y mostrar `Build and test` y `Deploy DEV`. El Summary debe indicar Environment, SHA, versión, digest y run de origen. La página de `dev` conserva el deployment.
 
 ## Escenario 2 — Promoción del mismo candidato a QA
 
@@ -34,7 +34,7 @@ git push -u origin release/v0.1.0-demo
 
 Abrir el PR `release/v0.1.0-demo → main` con el título `release: v0.1.0-demo`. Incluir versión, SHA, digest y run de CI. El PR debe permanecer abierto durante toda la validación funcional.
 
-Mostrar el workflow **Release QA** iniciado por el PR. `Resolve candidate` localiza automáticamente el artefacto creado previamente para el HEAD; después `Deploy QA` espera la aprobación del Environment `qa`. El aprobador revisa SHA, versión y digest y selecciona **Review deployments → Approve and deploy**.
+Mostrar la ejecución de **CI/CD Pipeline** iniciada por el PR. `Resolve QA candidate` localiza automáticamente el artefacto creado previamente para el HEAD; después `Deploy QA` espera la aprobación del Environment `qa`. El aprobador revisa SHA, versión y digest y selecciona **Review deployments → Approve and deploy**.
 
 Abrir el job de QA y mostrar los smoke tests de `/health`, `/environment` y `/version`, además del artefacto `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`. Explicar que una falla genera diagnósticos, pero no evidencia técnica exitosa.
 
@@ -53,7 +53,7 @@ Explicar que el PR fija el código correspondiente al digest aunque `develop` ha
 ## Escenario 4 — Producción
 
 1. Fusionar el PR `release/* → main` después de la aprobación funcional.
-2. Mostrar que el evento de merge inicia **Release PROD**.
+2. Mostrar que el evento de merge inicia una ejecución de **CI/CD Pipeline** para PROD.
 3. Abrir `Resolve merged candidate` y comprobar que utiliza el SHA original del PR, no el merge commit.
 4. Mostrar `Deploy PROD` esperando aprobación del Environment `prod`.
 5. Un reviewer distinto aprueba mediante **Review deployments → Approve and deploy**.
