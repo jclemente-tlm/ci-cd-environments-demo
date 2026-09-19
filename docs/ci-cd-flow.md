@@ -4,9 +4,11 @@ Este documento describe la automatización de la PoC. La matriz empresarial de c
 
 ## CI
 
-CI se ejecuta en cada push a `feature/*` y `fix/*` para dar feedback inmediato, y vuelve a ejecutarse en los PR hacia `develop` o `main`. Realiza restore, build, tests y publicación de resultados. Los pushes a ramas temporales y sus PR solo validan: no generan candidatos ni despliegan. Solo después de superar calidad, seguridad y delivery, un push integrado a `develop` publica `candidate-<commit SHA>` con retención de 30 días; `Deploy DEV` depende de esa publicación.
+CI se ejecuta en cada push a `feature/*` y `fix/*` para dar feedback inmediato, y vuelve a ejecutarse en los PR hacia `develop` o `main`. Realiza restore, build, tests y publicación de resultados. Los pushes a ramas temporales y sus PR solo validan: no generan candidatos ni despliegan. Solo después de superar calidad, seguridad y delivery, un push integrado a `develop` publica `candidate-<commit SHA>` en DEV con retención de 30 días; `Deploy DEV` depende de esa publicación.
 
 En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST, SonarQube para análisis de calidad, SCA, secret scanning, container scanning e IaC scanning. Los merges repiten los controles sobre el commit integrado, pero solamente `develop` construye el candidato promovible. La PoC todavía no implementa esas herramientas y no debe interpretarse que ya estén operativas.
+
+Cada pase publica o promueve la misma identidad antes del deployment: `Publish DEV → Deploy DEV`, `Publish QA → Deploy QA` y `Publish PROD → Deploy PROD`. En una implementación Docker, la imagen nace como `<versión>-dev`, se retaguea como `<versión>-rc` para QA y finalmente como `<versión>` para PROD. Las tres etiquetas apuntan al mismo digest; QA y PROD nunca reconstruyen la imagen.
 
 Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí se conserva el check requerido. Por ello, un merge compuesto exclusivamente por documentación no crea artefacto ni deployment, aunque actualice `develop` o `main`. `GITHUB_TOKEN` usa solo `contents: read` en CI.
 

@@ -177,8 +177,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  publish-candidate:
-    name: Publish candidate
+  publish-dev:
+    name: Publish DEV
     needs: [build-test-package, code-quality, security-checks, delivery-checks]
     if: >-
       github.event_name == 'push' &&
@@ -210,6 +210,17 @@ jobs:
           path: artifacts
           if-no-files-found: error
           retention-days: 30
+      - name: Record DEV image tag
+        shell: bash
+        env:
+          ARTIFACT_DIGEST: ${{ needs.build-test-package.outputs.artifact_digest }}
+          ARTIFACT_VERSION: ${{ needs.build-test-package.outputs.version }}
+        run: |
+          {
+            echo "## Publicación DEV — SIMULATED"
+            echo "- Tag creado: ${ARTIFACT_VERSION}-dev"
+            echo "- Digest: $ARTIFACT_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   code-quality:
     name: Code quality
@@ -287,7 +298,7 @@ jobs:
 
   deploy-dev:
     name: Deploy DEV
-    needs: publish-candidate
+    needs: publish-dev
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
@@ -302,25 +313,21 @@ jobs:
         with:
           environment: dev
           artifact_run_id: ${{ github.run_id }}
-          artifact_name: ${{ needs.publish-candidate.outputs.artifact_name }}
-          artifact_digest: ${{ needs.publish-candidate.outputs.artifact_digest }}
+          artifact_name: ${{ needs.publish-dev.outputs.artifact_name }}
+          artifact_digest: ${{ needs.publish-dev.outputs.artifact_digest }}
           commit_sha: ${{ github.sha }}
           branch: ${{ github.ref_name }}
-          version: ${{ needs.publish-candidate.outputs.version }}
+          version: ${{ needs.publish-dev.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
 
-  deploy-qa:
-    name: Deploy QA
+  publish-qa:
+    name: Publish QA
     needs: [build-test-package, code-quality, security-checks, delivery-checks]
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action != 'closed' &&
       (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
     runs-on: ubuntu-latest
-    environment: qa
-    concurrency:
-      group: deployment-qa
-      cancel-in-progress: false
     outputs:
       artifact_run_id: ${{ steps.candidate.outputs.artifact_run_id }}
       artifact_name: ${{ steps.candidate.outputs.artifact_name }}
@@ -336,15 +343,44 @@ jobs:
         uses: ./.github/actions/resolve-candidate
         with:
           commit_sha: ${{ github.event.pull_request.head.sha }}
+      - name: Promote the same digest to QA
+        shell: bash
+        env:
+          ARTIFACT_DIGEST: ${{ steps.candidate.outputs.artifact_digest }}
+          ARTIFACT_VERSION: ${{ steps.candidate.outputs.version }}
+        run: |
+          {
+            echo "## Publicación en QA — SIMULATED"
+            echo "- Retag: ${ARTIFACT_VERSION}-dev → ${ARTIFACT_VERSION}-rc"
+            echo "- Mismo digest, sin reconstrucción: $ARTIFACT_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-qa:
+    name: Deploy QA
+    needs: publish-qa
+    runs-on: ubuntu-latest
+    environment: qa
+    concurrency:
+      group: deployment-qa
+      cancel-in-progress: false
+    outputs:
+      artifact_run_id: ${{ needs.publish-qa.outputs.artifact_run_id }}
+      artifact_digest: ${{ needs.publish-qa.outputs.artifact_digest }}
+      version: ${{ needs.publish-qa.outputs.version }}
+    steps:
+      - name: Checkout trusted deployment actions
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
       - uses: ./.github/actions/deploy
         with:
           environment: qa
-          artifact_run_id: ${{ steps.candidate.outputs.artifact_run_id }}
-          artifact_name: ${{ steps.candidate.outputs.artifact_name }}
-          artifact_digest: ${{ steps.candidate.outputs.artifact_digest }}
+          artifact_run_id: ${{ needs.publish-qa.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.publish-qa.outputs.artifact_name }}
+          artifact_digest: ${{ needs.publish-qa.outputs.artifact_digest }}
           commit_sha: ${{ github.event.pull_request.head.sha }}
           branch: ${{ github.head_ref }}
-          version: ${{ steps.candidate.outputs.version }}
+          version: ${{ needs.publish-qa.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
           validate_qa: 'true'
 
@@ -369,14 +405,16 @@ jobs:
             echo "| Ejecución de CI | ${{ needs.deploy-qa.outputs.artifact_run_id }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  deploy-prod:
-    name: Deploy PROD
+  publish-prod:
+    name: Publish PROD
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: prod
-    concurrency:
-      group: deployment-prod
-      cancel-in-progress: false
+    outputs:
+      artifact_run_id: ${{ steps.candidate.outputs.artifact_run_id }}
+      artifact_name: ${{ steps.candidate.outputs.artifact_name }}
+      artifact_digest: ${{ steps.candidate.outputs.artifact_digest }}
+      version: ${{ steps.candidate.outputs.version }}
+      source_sha: ${{ steps.release.outputs.source_sha }}
     steps:
       - name: Checkout trusted deployment actions
         uses: actions/checkout@v4
@@ -399,13 +437,36 @@ jobs:
         uses: ./.github/actions/resolve-candidate
         with:
           commit_sha: ${{ steps.release.outputs.source_sha }}
+      - name: Promote the same digest to PROD
+        shell: bash
+        env:
+          ARTIFACT_DIGEST: ${{ steps.candidate.outputs.artifact_digest }}
+          ARTIFACT_VERSION: ${{ steps.candidate.outputs.version }}
+        run: |
+          {
+            echo "## Publicación en PROD — SIMULATED"
+            echo "- Retag: ${ARTIFACT_VERSION}-rc → ${ARTIFACT_VERSION}"
+            echo "- Mismo digest, sin reconstrucción: $ARTIFACT_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-prod:
+    name: Deploy PROD
+    needs: publish-prod
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: deployment-prod
+      cancel-in-progress: false
+    steps:
+      - name: Checkout trusted deployment actions
+        uses: actions/checkout@v4
       - uses: ./.github/actions/deploy
         with:
           environment: prod
-          artifact_run_id: ${{ steps.candidate.outputs.artifact_run_id }}
-          artifact_name: ${{ steps.candidate.outputs.artifact_name }}
-          artifact_digest: ${{ steps.candidate.outputs.artifact_digest }}
-          commit_sha: ${{ steps.release.outputs.source_sha }}
+          artifact_run_id: ${{ needs.publish-prod.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.publish-prod.outputs.artifact_name }}
+          artifact_digest: ${{ needs.publish-prod.outputs.artifact_digest }}
+          commit_sha: ${{ needs.publish-prod.outputs.source_sha }}
           branch: main
-          version: ${{ steps.candidate.outputs.version }}
+          version: ${{ needs.publish-prod.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
