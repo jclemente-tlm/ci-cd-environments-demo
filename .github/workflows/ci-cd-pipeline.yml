@@ -427,10 +427,6 @@ jobs:
     concurrency:
       group: deployment-qa
       cancel-in-progress: false
-    outputs:
-      artifact_run_id: ${{ needs.publish.outputs.artifact_run_id }}
-      artifact_digest: ${{ needs.publish.outputs.artifact_digest }}
-      version: ${{ needs.publish.outputs.version }}
     steps:
       - name: Checkout trusted deployment actions
         uses: actions/checkout@v4
@@ -447,12 +443,6 @@ jobs:
           version: ${{ needs.publish.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
           validate_qa: 'true'
-
-  qa-ready:
-    name: QA deployment ready for functional testing
-    needs: deploy-qa
-    runs-on: ubuntu-latest
-    steps:
       - name: Record candidate under functional validation
         env:
           RELEASE_BRANCH: ${{ github.head_ref }}
@@ -464,9 +454,9 @@ jobs:
             echo "| Pull request | #${{ github.event.pull_request.number }} |"
             echo "| Rama de liberación | $RELEASE_BRANCH |"
             echo "| Commit de origen | ${{ github.event.pull_request.head.sha }} |"
-            echo "| Versión | ${{ needs.deploy-qa.outputs.version }} |"
-            echo "| Digest del artefacto | ${{ needs.deploy-qa.outputs.artifact_digest }} |"
-            echo "| Ejecución de CI | ${{ needs.deploy-qa.outputs.artifact_run_id }} |"
+            echo "| Versión | ${{ needs.publish.outputs.version }} |"
+            echo "| Digest del artefacto | ${{ needs.publish.outputs.artifact_digest }} |"
+            echo "| Ejecución de CI | ${{ needs.publish.outputs.artifact_run_id }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy-prod:

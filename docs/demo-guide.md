@@ -40,7 +40,7 @@ Mostrar la ejecución de **CI/CD Pipeline** iniciada por el PR. `Deploy QA` espe
 
 Abrir el job de QA y mostrar los smoke tests de `/health`, `/environment` y `/version`, además del artefacto `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`. Explicar que una falla genera diagnósticos, pero no evidencia técnica exitosa.
 
-Abrir el Summary de QA y comparar su digest con DEV: debe ser idéntico. Mostrar que el workflow termina después de los smoke tests. El PR permanece abierto mientras QA prueba durante varios días; no queda ningún job esperando. Los pushes posteriores a `develop` actualizan DEV, pero nunca QA.
+Abrir el Summary de `Deploy QA` y comparar su digest con DEV: debe ser idéntico. El mismo job ejecuta los smoke tests y registra que el candidato quedó listo para validación funcional. El PR permanece abierto mientras QA prueba durante varios días; no queda ningún job esperando. Los pushes posteriores a `develop` actualizan DEV, pero nunca QA.
 
 ## Escenario 3 — QA sign-off y merge en `main`
 
