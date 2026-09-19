@@ -4,7 +4,7 @@ Este documento describe la automatización de la PoC. La matriz empresarial de c
 
 ## CI
 
-CI se ejecuta en cada push a `feature/*` y `fix/*` para dar feedback inmediato, y vuelve a ejecutarse en los PR hacia `develop` o `main`. Realiza restore, build, tests y publicación de resultados. Los pushes a ramas temporales y sus PR solo validan: no generan candidatos ni despliegan. Solo un push integrado a `develop` publica `candidate-<commit SHA>` con retención de 30 días.
+CI se ejecuta en cada push a `feature/*` y `fix/*` para dar feedback inmediato, y vuelve a ejecutarse en los PR hacia `develop` o `main`. Realiza restore, build, tests y publicación de resultados. Los pushes a ramas temporales y sus PR solo validan: no generan candidatos ni despliegan. Solo después de superar calidad, seguridad y delivery, un push integrado a `develop` publica `candidate-<commit SHA>` con retención de 30 días; `Deploy DEV` depende de esa publicación.
 
 En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST, SonarQube para análisis de calidad, SCA, secret scanning, container scanning e IaC scanning. Los merges repiten los controles sobre el commit integrado, pero solamente `develop` construye el candidato promovible. La PoC todavía no implementa esas herramientas y no debe interpretarse que ya estén operativas.
 

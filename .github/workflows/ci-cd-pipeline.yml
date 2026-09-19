@@ -166,13 +166,47 @@ jobs:
             echo "version=$VERSION"
             echo "name=$ARTIFACT_NAME"
           } >> "$GITHUB_OUTPUT"
-      - name: Upload immutable build artifact
+      - name: Upload build output for publication
         if: >-
           github.event_name == 'push' &&
           (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.identity.outputs.name }}
+          name: build-output-${{ github.sha }}
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-candidate:
+    name: Publish candidate
+    needs: [build-test-package, code-quality, security-checks, delivery-checks]
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_digest: ${{ needs.build-test-package.outputs.artifact_digest }}
+      artifact_name: ${{ needs.build-test-package.outputs.artifact_name }}
+      version: ${{ needs.build-test-package.outputs.version }}
+    steps:
+      - name: Download validated build output
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output-${{ github.sha }}
+          path: artifacts
+      - name: Verify candidate identity
+        shell: bash
+        env:
+          EXPECTED_DIGEST: ${{ needs.build-test-package.outputs.artifact_digest }}
+        run: |
+          test -s artifacts/candidate.env
+          test -s artifacts/checksums.sha256
+          ACTUAL_DIGEST="sha256:$(sha256sum artifacts/checksums.sha256 | cut -d' ' -f1)"
+          test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
+      - name: Publish immutable candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.build-test-package.outputs.artifact_name }}
           path: artifacts
           if-no-files-found: error
           retention-days: 30
@@ -253,7 +287,7 @@ jobs:
 
   deploy-dev:
     name: Deploy DEV
-    needs: [build-test-package, code-quality, security-checks, delivery-checks]
+    needs: publish-candidate
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
@@ -268,11 +302,11 @@ jobs:
         with:
           environment: dev
           artifact_run_id: ${{ github.run_id }}
-          artifact_name: ${{ needs.build-test-package.outputs.artifact_name }}
-          artifact_digest: ${{ needs.build-test-package.outputs.artifact_digest }}
+          artifact_name: ${{ needs.publish-candidate.outputs.artifact_name }}
+          artifact_digest: ${{ needs.publish-candidate.outputs.artifact_digest }}
           commit_sha: ${{ github.sha }}
           branch: ${{ github.ref_name }}
-          version: ${{ needs.build-test-package.outputs.version }}
+          version: ${{ needs.publish-candidate.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
 
   deploy-qa:
