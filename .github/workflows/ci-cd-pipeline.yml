@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop, 'hotfix/**']
+    branches: [main, develop, 'feature/**', 'fix/**', 'hotfix/**']
     paths-ignore: ['**/*.md', 'docs/**']
   pull_request:
     branches: [main, develop]
@@ -21,14 +21,41 @@ concurrency:
 jobs:
   validate-route:
     name: Validate branch route
-    if: github.event_name == 'pull_request' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
+      - name: Authorize push branch
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          case "$GITHUB_REF_NAME" in
+            main|develop|feature/*|fix/*|hotfix/*)
+              echo "Rama autorizada para este evento: $GITHUB_REF_NAME"
+              ;;
+            *)
+              echo "Rama no autorizada para CI/CD: $GITHUB_REF_NAME" >&2
+              exit 1
+              ;;
+          esac
+      - name: Authorize manual execution branch
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          case "$GITHUB_REF_NAME" in
+            main|develop|feature/*|fix/*|refactor/*|sync/*|release/*|hotfix/*)
+              echo "Rama autorizada para ejecución manual: $GITHUB_REF_NAME"
+              ;;
+            *)
+              echo "Rama no autorizada para ejecución manual: $GITHUB_REF_NAME" >&2
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - name: Validate source, destination and ancestry
+        if: github.event_name == 'pull_request'
         env:
           BASE_BRANCH: ${{ github.base_ref }}
           HEAD_BRANCH: ${{ github.head_ref }}
@@ -70,6 +97,7 @@ jobs:
 
   build-test-package:
     name: Build and unit tests
+    needs: validate-route
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
@@ -138,16 +166,157 @@ jobs:
             echo "version=$VERSION"
             echo "name=$ARTIFACT_NAME"
           } >> "$GITHUB_OUTPUT"
-      - name: Upload immutable build artifact
+      - name: Upload build output for publication
         if: >-
           github.event_name == 'push' &&
           (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.identity.outputs.name }}
+          name: build-output-${{ github.sha }}
+          path: artifacts
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish
+    needs: [build-test-package, code-quality, security-checks, delivery-checks]
+    if: >-
+      always() &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (
+          needs.build-test-package.result == 'success' &&
+          needs.code-quality.result == 'success' &&
+          needs.security-checks.result == 'success' &&
+          needs.delivery-checks.result == 'success' &&
+          (
+            (github.event_name == 'push' &&
+              (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))) ||
+            (github.event_name == 'pull_request' &&
+              (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/')))
+          )
+        )
+      )
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_run_id: ${{ steps.promotion.outputs.artifact_run_id }}
+      artifact_name: ${{ steps.promotion.outputs.artifact_name }}
+      artifact_digest: ${{ steps.promotion.outputs.artifact_digest }}
+      version: ${{ steps.promotion.outputs.version }}
+      source_sha: ${{ steps.promotion.outputs.source_sha }}
+    steps:
+      - name: Download validated build output for DEV
+        if: >-
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output-${{ github.sha }}
+          path: artifacts
+      - name: Publish DEV tag
+        if: >-
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
+        shell: bash
+        env:
+          EXPECTED_DIGEST: ${{ needs.build-test-package.outputs.artifact_digest }}
+          ARTIFACT_NAME: ${{ needs.build-test-package.outputs.artifact_name }}
+          ARTIFACT_VERSION: ${{ needs.build-test-package.outputs.version }}
+        run: |
+          test -s artifacts/candidate.env
+          test -s artifacts/checksums.sha256
+          ACTUAL_DIGEST="sha256:$(sha256sum artifacts/checksums.sha256 | cut -d' ' -f1)"
+          test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
+          printf 'artifact_run_id=%s\nartifact_name=%s\nartifact_digest=%s\nversion=%s\nsource_sha=%s\n' \
+            "$GITHUB_RUN_ID" "$ARTIFACT_NAME" "$EXPECTED_DIGEST" "$ARTIFACT_VERSION" "$GITHUB_SHA" \
+            > promotion.env
+          {
+            echo "## Publicación DEV — SIMULATED"
+            echo "- Tag creado: ${ARTIFACT_VERSION}-dev"
+            echo "- Digest: $EXPECTED_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Store immutable DEV candidate
+        if: >-
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.build-test-package.outputs.artifact_name }}
           path: artifacts
           if-no-files-found: error
           retention-days: 30
+      - name: Checkout trusted actions for QA
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - name: Resolve DEV image for QA
+        id: qa_candidate
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/resolve-candidate
+        with:
+          commit_sha: ${{ github.event.pull_request.head.sha }}
+      - name: Publish RC tag
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          ARTIFACT_RUN_ID: ${{ steps.qa_candidate.outputs.artifact_run_id }}
+          ARTIFACT_NAME: ${{ steps.qa_candidate.outputs.artifact_name }}
+          ARTIFACT_DIGEST: ${{ steps.qa_candidate.outputs.artifact_digest }}
+          ARTIFACT_VERSION: ${{ steps.qa_candidate.outputs.version }}
+        run: |
+          printf 'artifact_run_id=%s\nartifact_name=%s\nartifact_digest=%s\nversion=%s\nsource_sha=%s\n' \
+            "$ARTIFACT_RUN_ID" "$ARTIFACT_NAME" "$ARTIFACT_DIGEST" "$ARTIFACT_VERSION" \
+            "${{ github.event.pull_request.head.sha }}" > promotion.env
+          {
+            echo "## Publicación QA — SIMULATED"
+            echo "- Retag: ${ARTIFACT_VERSION}-dev → ${ARTIFACT_VERSION}-rc"
+            echo "- Mismo digest, sin reconstrucción: $ARTIFACT_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Checkout trusted actions for PROD
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/checkout@v4
+      - name: Identify merged release
+        id: release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq 'map(select(.merged_at != null and .base.ref == "main" and ((.head.ref | startswith("release/")) or (.head.ref | startswith("hotfix/"))))) | first | [.head.sha, .head.ref] | @tsv')
+          test -n "$RELEASE"
+          IFS=$'\t' read -r SOURCE_SHA _ <<< "$RELEASE"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Resolve RC image for PROD
+        id: prod_candidate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ./.github/actions/resolve-candidate
+        with:
+          commit_sha: ${{ steps.release.outputs.source_sha }}
+      - name: Publish final release tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          ARTIFACT_RUN_ID: ${{ steps.prod_candidate.outputs.artifact_run_id }}
+          ARTIFACT_NAME: ${{ steps.prod_candidate.outputs.artifact_name }}
+          ARTIFACT_DIGEST: ${{ steps.prod_candidate.outputs.artifact_digest }}
+          ARTIFACT_VERSION: ${{ steps.prod_candidate.outputs.version }}
+        run: |
+          printf 'artifact_run_id=%s\nartifact_name=%s\nartifact_digest=%s\nversion=%s\nsource_sha=%s\n' \
+            "$ARTIFACT_RUN_ID" "$ARTIFACT_NAME" "$ARTIFACT_DIGEST" "$ARTIFACT_VERSION" \
+            "${{ steps.release.outputs.source_sha }}" > promotion.env
+          {
+            echo "## Publicación PROD — SIMULATED"
+            echo "- Retag: ${ARTIFACT_VERSION}-rc → ${ARTIFACT_VERSION}"
+            echo "- Mismo digest, sin reconstrucción: $ARTIFACT_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Expose published image
+        id: promotion
+        shell: bash
+        run: |
+          test -s promotion.env
+          cat promotion.env >> "$GITHUB_OUTPUT"
 
   code-quality:
     name: Code quality
@@ -174,6 +343,7 @@ jobs:
 
   security-checks:
     name: Security checks
+    needs: validate-route
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -198,6 +368,7 @@ jobs:
 
   delivery-checks:
     name: Delivery checks
+    needs: validate-route
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -223,7 +394,7 @@ jobs:
 
   deploy-dev:
     name: Deploy DEV
-    needs: [build-test-package, code-quality, security-checks, delivery-checks]
+    needs: publish
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
@@ -237,41 +408,20 @@ jobs:
       - uses: ./.github/actions/deploy
         with:
           environment: dev
-          artifact_run_id: ${{ github.run_id }}
-          artifact_name: ${{ needs.build-test-package.outputs.artifact_name }}
-          artifact_digest: ${{ needs.build-test-package.outputs.artifact_digest }}
+          artifact_run_id: ${{ needs.publish.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.publish.outputs.artifact_name }}
+          artifact_digest: ${{ needs.publish.outputs.artifact_digest }}
           commit_sha: ${{ github.sha }}
           branch: ${{ github.ref_name }}
-          version: ${{ needs.build-test-package.outputs.version }}
+          version: ${{ needs.publish.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
-
-  resolve-qa-candidate:
-    name: Resolve QA candidate
-    needs: [build-test-package, code-quality, security-checks, delivery-checks]
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.action != 'closed' &&
-      (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
-    runs-on: ubuntu-latest
-    outputs:
-      artifact_run_id: ${{ steps.candidate.outputs.artifact_run_id }}
-      artifact_name: ${{ steps.candidate.outputs.artifact_name }}
-      artifact_digest: ${{ steps.candidate.outputs.artifact_digest }}
-      version: ${{ steps.candidate.outputs.version }}
-    steps:
-      - name: Checkout trusted deployment actions
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-      - name: Resolve the artifact built for the PR head
-        id: candidate
-        uses: ./.github/actions/resolve-candidate
-        with:
-          commit_sha: ${{ github.event.pull_request.head.sha }}
 
   deploy-qa:
     name: Deploy QA
-    needs: resolve-qa-candidate
+    needs: publish
+    if: >-
+      github.event_name == 'pull_request' &&
+      (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
     runs-on: ubuntu-latest
     environment: qa
     concurrency:
@@ -285,20 +435,14 @@ jobs:
       - uses: ./.github/actions/deploy
         with:
           environment: qa
-          artifact_run_id: ${{ needs.resolve-qa-candidate.outputs.artifact_run_id }}
-          artifact_name: ${{ needs.resolve-qa-candidate.outputs.artifact_name }}
-          artifact_digest: ${{ needs.resolve-qa-candidate.outputs.artifact_digest }}
+          artifact_run_id: ${{ needs.publish.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.publish.outputs.artifact_name }}
+          artifact_digest: ${{ needs.publish.outputs.artifact_digest }}
           commit_sha: ${{ github.event.pull_request.head.sha }}
           branch: ${{ github.head_ref }}
-          version: ${{ needs.resolve-qa-candidate.outputs.version }}
+          version: ${{ needs.publish.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
           validate_qa: 'true'
-
-  qa-ready:
-    name: QA deployment ready for functional testing
-    needs: [resolve-qa-candidate, deploy-qa]
-    runs-on: ubuntu-latest
-    steps:
       - name: Record candidate under functional validation
         env:
           RELEASE_BRANCH: ${{ github.head_ref }}
@@ -310,47 +454,15 @@ jobs:
             echo "| Pull request | #${{ github.event.pull_request.number }} |"
             echo "| Rama de liberación | $RELEASE_BRANCH |"
             echo "| Commit de origen | ${{ github.event.pull_request.head.sha }} |"
-            echo "| Versión | ${{ needs.resolve-qa-candidate.outputs.version }} |"
-            echo "| Digest del artefacto | ${{ needs.resolve-qa-candidate.outputs.artifact_digest }} |"
-            echo "| Ejecución de CI | ${{ needs.resolve-qa-candidate.outputs.artifact_run_id }} |"
+            echo "| Versión | ${{ needs.publish.outputs.version }} |"
+            echo "| Digest del artefacto | ${{ needs.publish.outputs.artifact_digest }} |"
+            echo "| Ejecución de CI | ${{ needs.publish.outputs.artifact_run_id }} |"
           } >> "$GITHUB_STEP_SUMMARY"
-
-  resolve-prod-candidate:
-    name: Resolve PROD candidate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    outputs:
-      artifact_run_id: ${{ steps.candidate.outputs.artifact_run_id }}
-      artifact_name: ${{ steps.candidate.outputs.artifact_name }}
-      artifact_digest: ${{ steps.candidate.outputs.artifact_digest }}
-      version: ${{ steps.candidate.outputs.version }}
-      source_sha: ${{ steps.release.outputs.source_sha }}
-    steps:
-      - name: Checkout trusted deployment actions
-        uses: actions/checkout@v4
-      - name: Identify the merged release
-        id: release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          RELEASE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
-            --jq 'map(select(.merged_at != null and .base.ref == "main" and ((.head.ref | startswith("release/")) or (.head.ref | startswith("hotfix/"))))) | first | [.head.sha, .head.ref] | @tsv')
-          test -n "$RELEASE"
-          IFS=$'\t' read -r SOURCE_SHA SOURCE_BRANCH <<< "$RELEASE"
-          {
-            echo "source_sha=$SOURCE_SHA"
-            echo "source_branch=$SOURCE_BRANCH"
-          } >> "$GITHUB_OUTPUT"
-      - name: Resolve the artifact approved in QA
-        id: candidate
-        uses: ./.github/actions/resolve-candidate
-        with:
-          commit_sha: ${{ steps.release.outputs.source_sha }}
 
   deploy-prod:
     name: Deploy PROD
-    needs: resolve-prod-candidate
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: prod
     concurrency:
@@ -362,10 +474,10 @@ jobs:
       - uses: ./.github/actions/deploy
         with:
           environment: prod
-          artifact_run_id: ${{ needs.resolve-prod-candidate.outputs.artifact_run_id }}
-          artifact_name: ${{ needs.resolve-prod-candidate.outputs.artifact_name }}
-          artifact_digest: ${{ needs.resolve-prod-candidate.outputs.artifact_digest }}
-          commit_sha: ${{ needs.resolve-prod-candidate.outputs.source_sha }}
+          artifact_run_id: ${{ needs.publish.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.publish.outputs.artifact_name }}
+          artifact_digest: ${{ needs.publish.outputs.artifact_digest }}
+          commit_sha: ${{ needs.publish.outputs.source_sha }}
           branch: main
-          version: ${{ needs.resolve-prod-candidate.outputs.version }}
+          version: ${{ needs.publish.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
