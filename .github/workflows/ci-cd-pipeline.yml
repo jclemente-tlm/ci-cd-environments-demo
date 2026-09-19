@@ -21,14 +21,41 @@ concurrency:
 jobs:
   validate-route:
     name: Validate branch route
-    if: github.event_name == 'pull_request' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
+      - name: Authorize push branch
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          case "$GITHUB_REF_NAME" in
+            main|develop|feature/*|fix/*|hotfix/*)
+              echo "Rama autorizada para este evento: $GITHUB_REF_NAME"
+              ;;
+            *)
+              echo "Rama no autorizada para CI/CD: $GITHUB_REF_NAME" >&2
+              exit 1
+              ;;
+          esac
+      - name: Authorize manual execution branch
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          case "$GITHUB_REF_NAME" in
+            main|develop|feature/*|fix/*|refactor/*|sync/*|release/*|hotfix/*)
+              echo "Rama autorizada para ejecución manual: $GITHUB_REF_NAME"
+              ;;
+            *)
+              echo "Rama no autorizada para ejecución manual: $GITHUB_REF_NAME" >&2
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - name: Validate source, destination and ancestry
+        if: github.event_name == 'pull_request'
         env:
           BASE_BRANCH: ${{ github.base_ref }}
           HEAD_BRANCH: ${{ github.head_ref }}
@@ -70,6 +97,7 @@ jobs:
 
   build-test-package:
     name: Build and unit tests
+    needs: validate-route
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
@@ -174,6 +202,7 @@ jobs:
 
   security-checks:
     name: Security checks
+    needs: validate-route
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -198,6 +227,7 @@ jobs:
 
   delivery-checks:
     name: Delivery checks
+    needs: validate-route
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:

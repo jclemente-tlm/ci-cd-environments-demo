@@ -75,7 +75,7 @@ GitHub permite esperar hasta 30 días por una aprobación de Environment y limit
 
 ## Política de Pull Requests
 
-El job `Validate branch route` convierte las rutas documentadas en un check ejecutable. Permite `feature/*`, `fix/*` y `refactor/*` hacia `develop`, `release/*` y `hotfix/*` hacia `main`, y `main` hacia `develop` para resincronización. Releases y hotfixes deben contener el estado actual de `main`; los hotfixes además no pueden incluir merges de otra línea de desarrollo.
+El job `Validate branch route` es la puerta de entrada de las validaciones. En un PR comprueba la ruta antes de iniciar build, calidad, seguridad y delivery. Permite `feature/*`, `fix/*` y `refactor/*` hacia `develop`, `release/*` y `hotfix/*` hacia `main`, y `main` hacia `develop` para resincronización. Releases y hotfixes deben contener el estado actual de `main`; los hotfixes además no pueden incluir merges de otra línea de desarrollo. En un push, el trigger limita las ramas autorizadas antes de crear la ejecución.
 
 ## Fallas en QA
 
