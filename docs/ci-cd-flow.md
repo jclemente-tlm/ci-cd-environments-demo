@@ -13,7 +13,7 @@ En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST
 ### Grafo de dependencias acordado
 
 ```text
-Validate branch route
+Validate
 ├── Build and unit tests ──> Code quality ───────────────┐
 ├── Security checks ─────────────────────────────────────┤
 └── Delivery checks (Dockerfile/IaC) ────────────────────┘
@@ -96,7 +96,7 @@ GitHub permite esperar hasta 30 días por una aprobación de Environment y limit
 
 ## Política de Pull Requests
 
-El job `Validate branch route` es la puerta de entrada de las validaciones. En un PR comprueba la ruta antes de iniciar build, calidad, seguridad y delivery. Permite `feature/*`, `fix/*` y `refactor/*` hacia `develop`, `release/*` y `hotfix/*` hacia `main`, y `main` hacia `develop` para resincronización. Releases y hotfixes deben contener el estado actual de `main`; los hotfixes además no pueden incluir merges de otra línea de desarrollo. En un push, el trigger limita las ramas autorizadas antes de crear la ejecución.
+El job `Validate` es la puerta de entrada de las validaciones. En un PR comprueba la ruta antes de iniciar build, calidad, seguridad y delivery. Permite `feature/*`, `fix/*` y `refactor/*` hacia `develop`, `release/*` y `hotfix/*` hacia `main`, y `main` hacia `develop` para resincronización. Releases y hotfixes deben contener el estado actual de `main`; los hotfixes además no pueden incluir merges de otra línea de desarrollo. En un push, el trigger limita las ramas autorizadas antes de crear la ejecución. Sus pasos conservan nombres específicos para que el resumen muestre qué regla se validó.
 
 ## Fallas en QA
 

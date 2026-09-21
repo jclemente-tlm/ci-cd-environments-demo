@@ -19,8 +19,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate-route:
-    name: Validate branch route
+  validate:
+    name: Validate
     runs-on: ubuntu-latest
     steps:
       - name: Authorize push branch
@@ -97,7 +97,7 @@ jobs:
 
   build-test:
     name: Build and unit tests
-    needs: validate-route
+    needs: validate
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -147,7 +147,7 @@ jobs:
 
   promote-artifact:
     name: Promote published artifact
-    needs: [validate-route, artifact-scan]
+    needs: [validate, artifact-scan]
     if: >-
       always() &&
       (
@@ -264,7 +264,7 @@ jobs:
 
   security-checks:
     name: Security checks
-    needs: validate-route
+    needs: validate
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -289,7 +289,7 @@ jobs:
 
   delivery-checks:
     name: Delivery checks
-    needs: validate-route
+    needs: validate
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:

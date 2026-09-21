@@ -54,7 +54,7 @@ El workflow de QA termina después del deployment y los smoke tests. El PR perma
 
 Crear manualmente los Environments `dev`, `qa` y `prod`. En los tres definir el secret ficticio `DEMO_DEPLOY_TOKEN`. Configurar required reviewers en `qa` y `prod`; QA funcional se registra como revisión requerida del PR, no mediante un Environment adicional. Ningún valor secreto se registra o se incluye en el artefacto.
 
-Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks `Validate branch route`, `Build and unit tests`, `Code quality`, `Security checks`, `Delivery checks` y `Scan packaged artifact`. En `main`, exigir además el deployment QA y la revisión funcional. Los detalles y comandos de demo están en:
+Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks `Validate`, `Build and unit tests`, `Code quality`, `Security checks`, `Delivery checks` y `Scan packaged artifact`. En `main`, exigir además el deployment QA y la revisión funcional. Los detalles y comandos de demo están en:
 
 - [Estrategia de ramas](docs/branching-strategy.md)
 - [Decisiones de arquitectura](docs/architecture-decisions.md)
