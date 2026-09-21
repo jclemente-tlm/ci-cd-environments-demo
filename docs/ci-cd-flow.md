@@ -4,11 +4,30 @@ Este documento describe la automatización de la PoC. La matriz empresarial de c
 
 ## CI
 
-CI se ejecuta en cada push a `feature/*` y `fix/*` para dar feedback inmediato, y vuelve a ejecutarse en los PR hacia `develop` o `main`. Realiza restore, build, tests y publicación de resultados. Los pushes a ramas temporales y sus PR solo validan: no generan candidatos ni despliegan. Solo después de superar calidad, seguridad y delivery, un push integrado a `develop` publica `candidate-<commit SHA>` en DEV con retención de 30 días; `Deploy DEV` depende de esa publicación.
+CI se ejecuta en cada push a `feature/*` y `fix/*` para dar feedback inmediato, y vuelve a ejecutarse en los PR hacia `develop` o `main`. Los pushes a ramas temporales y sus PR generan un paquete efímero para poder analizar el entregable final, pero no publican un candidato promovible ni despliegan. Solo después de superar calidad, seguridad, delivery y artifact scan, un push integrado a `develop` publica `candidate-<commit SHA>` con retención de 30 días; `Deploy DEV` depende de esa publicación.
 
 En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST, SonarQube para análisis de calidad, SCA, secret scanning, container scanning e IaC scanning. Los merges repiten los controles sobre el commit integrado, pero solamente `develop` construye el candidato promovible. La PoC todavía no implementa esas herramientas y no debe interpretarse que ya estén operativas.
 
-Un único job `Publish` selecciona mediante steps condicionales el pase correspondiente antes del deployment. En una implementación Docker, la imagen nace como `<versión>-dev`, se retaguea como `<versión>-rc` para QA y finalmente como `<versión>` para PROD. Las tres etiquetas apuntan al mismo digest; QA y PROD nunca reconstruyen la imagen. Los tres jobs de deployment dependen de `Publish`, que expone una identidad común de artefacto.
+`Publish immutable artifact` existe únicamente para el candidato producido desde `develop` o un hotfix. `Promote published artifact` resuelve después ese candidato para QA o PROD y cambia su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
+
+### Grafo de dependencias acordado
+
+```text
+Validate branch route
+├── Build and unit tests ──> Code quality ───────────────┐
+├── Security checks ─────────────────────────────────────┤
+└── Delivery checks (Dockerfile/IaC) ────────────────────┘
+                                                          ↓
+                                                Package deployable artifact
+                                                          ↓
+                                                 Scan packaged artifact
+                                                          ↓
+                                               Publish immutable artifact
+                                                          ↓
+                                            DEV ──> QA ──> PROD
+```
+
+Build y los controles de seguridad pueden ejecutarse en paralelo. Quality depende de tests porque consume cobertura. Package espera todos los gates: la política elegida es **no generar el entregable si falla calidad o seguridad**, no solamente impedir su publicación. El escaneo dependiente del formato ocurre después de Package: Trivy Image para contenedores; SCA, antivirus, SBOM o firma para ZIP y otros binarios. La PoC simula esa selección con `format=dotnet-publish`.
 
 Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí se conserva el check requerido. Por ello, un merge compuesto exclusivamente por documentación no crea artefacto ni deployment, aunque actualice `develop` o `main`. `GITHUB_TOKEN` usa solo `contents: read` en CI.
 
@@ -55,7 +74,7 @@ sequenceDiagram
     Registry->>Prod: Desplegar exactamente X
 ```
 
-Los jobs de deployment no ejecutan `dotnet build` ni `dotnet publish`. Una ejecución de `CI/CD Pipeline` publica el candidato y termina después de desplegar DEV. Otra ejecución del mismo workflow resuelve el artefacto por el SHA del PR, recalcula su huella SHA-256, verifica el manifiesto y despliega QA. Después inicia la aplicación y valida `/health`, `/environment` y `/version`; solo si las respuestas coinciden publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>` y finaliza.
+Los jobs de deployment no ejecutan `dotnet build`, `dotnet publish`, `docker build` ni otro empaquetado. Una ejecución de `CI/CD Pipeline` publica el candidato y termina después de desplegar DEV. Otra ejecución del mismo workflow resuelve el artefacto por el SHA del PR, recalcula su huella SHA-256, verifica el manifiesto y despliega QA. Después inicia la aplicación y valida `/health`, `/environment` y `/version`; solo si las respuestas coinciden publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>` y finaliza.
 
 No se utiliza `workflow_run`. La acción `resolve-candidate` busca un artefacto no expirado llamado `candidate-<SHA>`, descarga sus metadatos y expone automáticamente run, versión y digest. El digest de la PoC representa el digest Docker que una implementación real resolvería desde ECR.
 
