@@ -19,7 +19,9 @@ git switch -c feature/demo-change
 git push -u origin feature/demo-change
 ```
 
-Abrir PR `feature/demo-change → develop`, mostrar los checks `Build and test` y `Validate branch route`, y hacer merge. En Actions, abrir la ejecución **CI/CD Pipeline** del push y mostrar `Build and test` y `Deploy DEV`. El Summary debe indicar Environment, SHA, versión, digest y run de origen. La página de `dev` conserva el deployment.
+Primero, mostrar que el push ejecuta `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`, pero no genera un candidato ni despliega en ningún ambiente. Esto proporciona feedback inmediato antes del PR.
+
+Abrir PR `feature/demo-change → develop`, mostrar nuevamente las validaciones junto con `Validate branch route`, y hacer merge. En Actions, abrir la ejecución **CI/CD Pipeline** del push integrado a `develop` y mostrar las validaciones, la creación del candidato y `Deploy DEV`. El Summary debe indicar Environment, SHA, versión, digest y run de origen. La página de `dev` conserva el deployment.
 
 ## Escenario 2 — Promoción del mismo candidato a QA
 
@@ -34,11 +36,11 @@ git push -u origin release/v0.1.0-demo
 
 Abrir el PR `release/v0.1.0-demo → main` con el título `release: v0.1.0-demo`. Incluir versión, SHA, digest y run de CI. El PR debe permanecer abierto durante toda la validación funcional.
 
-Mostrar la ejecución de **CI/CD Pipeline** iniciada por el PR. `Resolve QA candidate` localiza automáticamente el artefacto creado previamente para el HEAD; después `Deploy QA` espera la aprobación del Environment `qa`. El aprobador revisa SHA, versión y digest y selecciona **Review deployments → Approve and deploy**.
+Mostrar la ejecución de **CI/CD Pipeline** iniciada por el PR. `Deploy QA` espera la aprobación del Environment `qa`. Después de aprobar, el mismo job localiza el artefacto creado previamente para el HEAD, verifica su identidad y lo despliega sin reconstruirlo.
 
 Abrir el job de QA y mostrar los smoke tests de `/health`, `/environment` y `/version`, además del artefacto `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`. Explicar que una falla genera diagnósticos, pero no evidencia técnica exitosa.
 
-Abrir el Summary de QA y comparar su digest con DEV: debe ser idéntico. Mostrar que el workflow termina después de los smoke tests. El PR permanece abierto mientras QA prueba durante varios días; no queda ningún job esperando. Los pushes posteriores a `develop` actualizan DEV, pero nunca QA.
+Abrir el Summary de `Deploy QA` y comparar su digest con DEV: debe ser idéntico. El mismo job ejecuta los smoke tests y registra que el candidato quedó listo para validación funcional. El PR permanece abierto mientras QA prueba durante varios días; no queda ningún job esperando. Los pushes posteriores a `develop` actualizan DEV, pero nunca QA.
 
 ## Escenario 3 — QA sign-off y merge en `main`
 
