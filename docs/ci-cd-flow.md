@@ -8,7 +8,7 @@ CI se ejecuta en cada push a `feature/*`, `fix/*` y `hotfix/*` para dar feedback
 
 En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST, SonarQube para análisis de calidad, SCA, secret scanning, container scanning e IaC scanning. Los merges repiten los controles sobre el commit integrado, pero solamente `develop` construye el candidato promovible. La PoC todavía no implementa esas herramientas y no debe interpretarse que ya estén operativas.
 
-`Publish immutable artifact` existe únicamente en `Develop Delivery`. Los workflows de QA y PROD resuelven después ese candidato y cambian su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
+`Publish` existe únicamente en `Develop Delivery`. Los workflows de QA y PROD resuelven después ese candidato y cambian su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
 
 ### Grafo de dependencias acordado
 
@@ -22,11 +22,11 @@ Validate
                                                           │
                                     Continuar solo en push de develop
                                                           ↓
-                                                Package deployable artifact
+                                                       Package
                                                           ↓
-                                                 Scan packaged artifact
+                                                    Artifact scan
                                                           ↓
-                                               Publish immutable artifact
+                                                       Publish
                                                           ↓
                                             DEV ──> QA ──> PROD
 ```

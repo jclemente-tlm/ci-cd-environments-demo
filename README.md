@@ -54,7 +54,7 @@ Después del deployment y las pruebas de QA, el job `QA sign-off` permanece visi
 
 Crear los Environments `dev`, `qa`, `qa-signoff` y `prod`. Definir el secret ficticio `DEMO_DEPLOY_TOKEN` solamente en los tres destinos de deployment. Configurar required reviewers en `qa`, `qa-signoff` y `prod`; `qa-signoff` es un gate lógico sin secrets. Ningún valor secreto se registra o se incluye en el artefacto.
 
-Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks de CI `Validate`, `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`. `Scan packaged artifact` se ejecuta después del merge en `develop`, no sobre ramas temporales. En `main`, exigir además `QA acceptance tests` y `QA sign-off`. Los detalles y comandos de demo están en:
+Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks de CI `Validate`, `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`. `Artifact scan` se ejecuta después del merge en `develop`, no sobre ramas temporales. En `main`, exigir además `QA acceptance tests` y `QA sign-off`. Los detalles y comandos de demo están en:
 
 - [Estrategia de ramas](docs/branching-strategy.md)
 - [Decisiones de arquitectura](docs/architecture-decisions.md)
