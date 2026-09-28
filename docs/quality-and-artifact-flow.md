@@ -164,7 +164,7 @@ El comando `trivy fs .` del proyecto de referencia analiza el workspace del runn
 
 ## Política de construcción durante Pull Requests
 
-Un PR nunca publica una imagen o artefacto desplegable en el registro empresarial. El container scanning puede construir internamente una imagen efímera, pero esta es un detalle de ejecución del scanner y debe descartarse al finalizar.
+Un PR construye una imagen efímera para que tests y scanners validen el mismo entregable, pero nunca la publica como candidato en el registro empresarial. La imagen debe descartarse al finalizar el run.
 
 ```text
 PR: construir → escanear → descartar
@@ -236,7 +236,7 @@ Si QA rechaza un candidato, este no obtiene sign-off y no puede llegar a PROD. U
 | Build y unit tests | Implementado; 3 pruebas unitarias | Ampliar la suite y las políticas |
 | Medición de cobertura | Reporte OpenCover simulado, sin métrica real | Integrar Coverlet y definir umbral |
 | Artefacto .NET inmutable | Implementado con GitHub Artifacts | Registro empresarial |
-| Imagen Docker | Dockerfile y build local disponibles; el pipeline usa actualmente `dotnet publish` | Build, Trivy Image y publicación en GHCR/ECR/Artifactory/Nexus |
+| Imagen Docker | Implementada como `docker build`, `docker save/load` y checksum de `image.tar` | Sustituir el artefacto de Actions por publicación por digest en GHCR/ECR/Artifactory/Nexus |
 | Smoke tests QA | Implementado | Ejecutarlos contra infraestructura real |
 | Semgrep/SCA/secrets/IaC/container scanning | Jobs simulados y marcados como `SIMULATED` | Instalar herramientas y seleccionar reglas, severidades y quality gates |
 | QA funcional manual | Revisión requerida documentada; se configura en protección de `main` | Integrar herramienta corporativa de pruebas o check dedicado si aplica |

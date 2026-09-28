@@ -54,10 +54,15 @@ jobs:
         run: dotnet restore
       - name: Build
         run: dotnet build --configuration Release --no-restore
-      - name: Create deployable artifact
+      - name: Build deployable image
         run: |
-          dotnet publish src/Cicd.Demo.Api/Cicd.Demo.Api.csproj --configuration Release --no-build --no-restore --output build/app /p:UseAppHost=false
-          (cd build/app && find . -type f -print0 | sort -z | xargs -0 sha256sum) > build/checksums.sha256
+          IMAGE_REF="ci-cd-environments-demo:${GITHUB_SHA}"
+          mkdir -p build
+          docker build --tag "$IMAGE_REF" --label "org.opencontainers.image.revision=${GITHUB_SHA}" .
+          docker image inspect "$IMAGE_REF" --format '{{.Id}}' > build/image-id.txt
+          printf 'image_ref=%s\nsource_sha=%s\n' "$IMAGE_REF" "$GITHUB_SHA" > build/build.env
+          docker save --output build/image.tar "$IMAGE_REF"
+          (cd build && sha256sum image.tar > image.sha256)
       - name: Preserve test binaries
         run: tar -cf compiled-output.tar src/Cicd.Demo.Api/bin/Release src/Cicd.Demo.Api/obj tests/Cicd.Demo.Api.Tests/bin/Release tests/Cicd.Demo.Api.Tests/obj
       - uses: actions/upload-artifact@v4
@@ -94,9 +99,16 @@ jobs:
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory TestResults
       - name: Integration tests
         run: |
-          test -f build/app/Cicd.Demo.Api.dll
-          (cd build/app && sha256sum --check ../checksums.sha256)
-          echo "SIMULATED - integration test suite against the deployable artifact"
+          (cd build && sha256sum --check image.sha256)
+          docker load --input build/image.tar
+          IMAGE_REF=$(sed -n 's/^image_ref=//p' build/build.env)
+          CONTAINER_ID=$(docker run --detach --publish 5088:8080 "$IMAGE_REF")
+          trap 'docker rm --force "$CONTAINER_ID" >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..15}; do
+            curl --fail --silent http://127.0.0.1:5088/health > health.json && break
+            sleep 1
+          done
+          test "$(jq -r '.status' health.json)" = "healthy"
       - name: Generate simulated coverage report
         run: |
           mkdir -p reports/coverage

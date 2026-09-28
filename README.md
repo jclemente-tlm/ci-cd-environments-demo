@@ -1,6 +1,6 @@
 # ci-cd-environments-demo
 
-PoC de demostración basada en una API mínima en .NET 10 que muestra cómo construir un candidato una sola vez y promover exactamente la misma identidad por `dev`, `qa` y `prod` usando GitHub Environments. El despliegue es simulado: no crea infraestructura ni almacena credenciales reales. Una huella SHA-256 del paquete representa el digest que tendría una imagen Docker en un registro empresarial.
+PoC de demostración basada en una API mínima en .NET 10 que muestra cómo construir una imagen Docker una sola vez y promover exactamente la misma identidad por `dev`, `qa` y `prod` usando GitHub Environments. El despliegue de infraestructura es simulado: no crea recursos ni almacena credenciales reales. La imagen se conserva como `image.tar` y su huella SHA-256 actúa como identidad inmutable en lugar de un registry empresarial.
 
 El repositorio está diseñado para publicarse sin referencias a organizaciones, repositorios, sistemas o credenciales reales. El uso de un repositorio público permite probar required reviewers y otras reglas de protección de GitHub Environments en planes donde esas capacidades no están disponibles para repositorios privados.
 

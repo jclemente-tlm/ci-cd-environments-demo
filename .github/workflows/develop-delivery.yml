@@ -29,10 +29,15 @@ jobs:
         name: Restore
       - run: dotnet build --configuration Release --no-restore
         name: Build
-      - name: Create deployable artifact
+      - name: Build deployable image
         run: |
-          dotnet publish src/Cicd.Demo.Api/Cicd.Demo.Api.csproj --configuration Release --no-build --no-restore --output build/app /p:UseAppHost=false
-          (cd build/app && find . -type f -print0 | sort -z | xargs -0 sha256sum) > build/checksums.sha256
+          IMAGE_REF="ci-cd-environments-demo:${GITHUB_SHA}"
+          mkdir -p build
+          docker build --tag "$IMAGE_REF" --label "org.opencontainers.image.revision=${GITHUB_SHA}" .
+          docker image inspect "$IMAGE_REF" --format '{{.Id}}' > build/image-id.txt
+          printf 'image_ref=%s\nsource_sha=%s\n' "$IMAGE_REF" "$GITHUB_SHA" > build/build.env
+          docker save --output build/image.tar "$IMAGE_REF"
+          (cd build && sha256sum image.tar > image.sha256)
       - name: Preserve test binaries
         run: tar -cf compiled-output.tar src/Cicd.Demo.Api/bin/Release src/Cicd.Demo.Api/obj tests/Cicd.Demo.Api.Tests/bin/Release tests/Cicd.Demo.Api.Tests/obj
       - uses: actions/upload-artifact@v4
@@ -69,9 +74,16 @@ jobs:
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory TestResults
       - name: Integration tests
         run: |
-          test -f build/app/Cicd.Demo.Api.dll
-          (cd build/app && sha256sum --check ../checksums.sha256)
-          echo "SIMULATED - integration test suite against the deployable artifact"
+          (cd build && sha256sum --check image.sha256)
+          docker load --input build/image.tar
+          IMAGE_REF=$(sed -n 's/^image_ref=//p' build/build.env)
+          CONTAINER_ID=$(docker run --detach --publish 5088:8080 "$IMAGE_REF")
+          trap 'docker rm --force "$CONTAINER_ID" >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..15}; do
+            curl --fail --silent http://127.0.0.1:5088/health > health.json && break
+            sleep 1
+          done
+          test "$(jq -r '.status' health.json)" = "healthy"
       - name: Generate simulated coverage
         run: |
           mkdir -p reports/coverage
@@ -153,10 +165,11 @@ jobs:
       - name: Assign official version and metadata
         id: identity
         run: |
-          DIGEST="sha256:$(sha256sum release/checksums.sha256 | cut -d' ' -f1)"
+          DIGEST="sha256:$(sha256sum release/image.tar | cut -d' ' -f1)"
           VERSION="0.1.0-${GITHUB_RUN_ID}"
           ARTIFACT_NAME="candidate-${GITHUB_SHA}"
-          printf 'source_sha=%s\nsource_branch=%s\nsource_run=%s\nversion=%s\ndigest=%s\nformat=%s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$VERSION" "$DIGEST" "dotnet-publish" > release/candidate.env
+          IMAGE_REF="ghcr.io/${GITHUB_REPOSITORY}:${VERSION}"
+          printf 'source_sha=%s\nsource_branch=%s\nsource_run=%s\nversion=%s\ndigest=%s\nformat=%s\nimage_ref=%s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$VERSION" "$DIGEST" "docker-image" "$IMAGE_REF" > release/candidate.env
           printf 'digest=%s\nversion=%s\nname=%s\n' "$DIGEST" "$VERSION" "$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
       - name: Generate SBOM
         run: |
@@ -165,11 +178,20 @@ jobs:
         env:
           EXPECTED_DIGEST: ${{ steps.identity.outputs.digest }}
         run: |
-          ACTUAL_DIGEST="sha256:$(sha256sum release/checksums.sha256 | cut -d' ' -f1)"
+          ACTUAL_DIGEST="sha256:$(sha256sum release/image.tar | cut -d' ' -f1)"
           test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
-          (cd release/app && sha256sum --check ../checksums.sha256)
-      - name: Binary vulnerability scan
-        run: echo "SIMULATED - binary vulnerability scan"
+          (cd release && sha256sum --check image.sha256)
+      - name: Apply official image tag without rebuilding
+        run: |
+          docker load --input release/image.tar
+          SOURCE_IMAGE=$(sed -n 's/^image_ref=//p' release/build.env)
+          RELEASE_IMAGE=$(sed -n 's/^image_ref=//p' release/candidate.env)
+          SOURCE_ID=$(docker image inspect "$SOURCE_IMAGE" --format '{{.Id}}')
+          docker tag "$SOURCE_IMAGE" "$RELEASE_IMAGE"
+          RELEASE_ID=$(docker image inspect "$RELEASE_IMAGE" --format '{{.Id}}')
+          test "$SOURCE_ID" = "$RELEASE_ID"
+      - name: Container image vulnerability scan
+        run: echo "SIMULATED - Trivy image vulnerability scan"
       - name: Dependency vulnerability scan
         run: echo "SIMULATED - release dependency vulnerability scan"
       - name: Malware scan

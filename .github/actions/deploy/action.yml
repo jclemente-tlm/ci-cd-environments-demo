@@ -45,13 +45,14 @@ runs:
         EXPECTED_VERSION: ${{ inputs.version }}
       run: |
         test -f artifact/candidate.env
-        test -f artifact/checksums.sha256
-        ACTUAL_DIGEST="sha256:$(sha256sum artifact/checksums.sha256 | cut -d' ' -f1)"
+        test -f artifact/image.tar
+        test -f artifact/image.sha256
+        ACTUAL_DIGEST="sha256:$(sha256sum artifact/image.tar | cut -d' ' -f1)"
         test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
         grep -Fxq "digest=$EXPECTED_DIGEST" artifact/candidate.env
         grep -Fxq "source_sha=$EXPECTED_SHA" artifact/candidate.env
         grep -Fxq "version=$EXPECTED_VERSION" artifact/candidate.env
-        (cd artifact/app && sha256sum --check ../checksums.sha256)
+        (cd artifact && sha256sum --check image.sha256)
     - name: Simulate deployment
       shell: bash
       env:
@@ -73,10 +74,12 @@ runs:
           echo "::error::Falta el secret DEMO_DEPLOY_TOKEN en el Environment $APP_ENVIRONMENT"
           exit 1
         }
-        test -f artifact/app/Cicd.Demo.Api.dll || {
-          echo "::error::El artefacto no contiene Cicd.Demo.Api.dll"
-          exit 1
-        }
+        docker load --input artifact/image.tar
+        SOURCE_IMAGE=$(sed -n 's/^image_ref=//p' artifact/build.env)
+        RELEASE_IMAGE=$(sed -n 's/^image_ref=//p' artifact/candidate.env)
+        SOURCE_ID=$(docker image inspect "$SOURCE_IMAGE" --format '{{.Id}}')
+        docker tag "$SOURCE_IMAGE" "$RELEASE_IMAGE"
+        test "$(docker image inspect "$RELEASE_IMAGE" --format '{{.Id}}')" = "$SOURCE_ID"
         DEPLOYED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
         {
           echo "## Despliegue exitoso"

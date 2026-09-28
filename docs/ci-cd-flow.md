@@ -30,7 +30,7 @@ Validate
                                             DEV ──> QA ──> PROD
 ```
 
-`Build` compila y crea el entregable una sola vez; `Tests` ejecuta pruebas unitarias y valida ese mismo contenido. Los controles de seguridad pueden avanzar en paralelo y `Code quality scan` depende de `Tests` porque consume cobertura. En ramas temporales el flujo termina al completar esos gates y el entregable efímero expira. En el push de `develop`, `Release` espera todos los gates, asigna versión y metadatos, genera el SBOM, ejecuta verificación de integridad, análisis de vulnerabilidades, malware y política de release, y finalmente publica el candidato inmutable con su digest. `Release` no recompila ni modifica `app/`.
+`Build` compila y crea la imagen Docker una sola vez, la exporta como `image.tar` y registra su checksum e ID. `Tests` ejecuta pruebas unitarias y levanta un contenedor desde esa misma imagen para validar `/health`. Los controles de seguridad pueden avanzar en paralelo y `Code quality scan` depende de `Tests` porque consume cobertura. En ramas temporales el flujo termina al completar esos gates y la imagen efímera expira. En el push de `develop`, `Release` espera todos los gates, asigna versión y tag sin cambiar el image ID, genera metadatos y SBOM, ejecuta verificación de integridad, escaneo de imagen, malware y política de release, y finalmente publica el candidato inmutable. `Release` no ejecuta `docker build`.
 
 Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí se conserva el check requerido. Por ello, un merge compuesto exclusivamente por documentación no crea artefacto ni deployment, aunque actualice `develop` o `main`. `GITHUB_TOKEN` usa solo `contents: read` en CI.
 

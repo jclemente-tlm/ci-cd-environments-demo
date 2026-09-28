@@ -42,13 +42,14 @@ runs:
         EXPECTED_VERSION: ${{ inputs.version }}
       run: |
         test -f deployed-artifact/candidate.env
-        test -f deployed-artifact/checksums.sha256
-        ACTUAL_DIGEST="sha256:$(sha256sum deployed-artifact/checksums.sha256 | cut -d' ' -f1)"
+        test -f deployed-artifact/image.tar
+        test -f deployed-artifact/image.sha256
+        ACTUAL_DIGEST="sha256:$(sha256sum deployed-artifact/image.tar | cut -d' ' -f1)"
         test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
         grep -Fxq "digest=$EXPECTED_DIGEST" deployed-artifact/candidate.env
         grep -Fxq "source_sha=$EXPECTED_SHA" deployed-artifact/candidate.env
         grep -Fxq "version=$EXPECTED_VERSION" deployed-artifact/candidate.env
-        (cd deployed-artifact/app && sha256sum --check ../checksums.sha256)
+        (cd deployed-artifact && sha256sum --check image.sha256)
     - name: Verify deployment health and identity
       shell: bash
       env:
@@ -63,9 +64,18 @@ runs:
           *) echo "::error::Ambiente de validación no permitido: $APP_ENVIRONMENT"; exit 1 ;;
         esac
 
-        ASPNETCORE_URLS=http://127.0.0.1:5088 dotnet deployed-artifact/app/Cicd.Demo.Api.dll > verification-api.log 2>&1 &
-        API_PID=$!
-        trap 'kill "$API_PID" 2>/dev/null || true' EXIT
+        docker load --input deployed-artifact/image.tar
+        SOURCE_IMAGE=$(sed -n 's/^image_ref=//p' deployed-artifact/build.env)
+        RELEASE_IMAGE=$(sed -n 's/^image_ref=//p' deployed-artifact/candidate.env)
+        docker tag "$SOURCE_IMAGE" "$RELEASE_IMAGE"
+        CONTAINER_ID=$(docker run --detach --publish 5088:8080 \
+          --env "APP_ENVIRONMENT=$APP_ENVIRONMENT" \
+          --env "APP_VERSION=$APP_VERSION" \
+          --env "APP_COMMIT_SHA=$APP_COMMIT_SHA" \
+          --env "APP_BRANCH=$APP_BRANCH" \
+          --env "APP_DEPLOYED_AT=$APP_DEPLOYED_AT" \
+          "$RELEASE_IMAGE")
+        trap 'docker logs "$CONTAINER_ID" > verification-api.log 2>&1 || true; docker rm --force "$CONTAINER_ID" >/dev/null 2>&1 || true' EXIT
 
         READY=false
         for attempt in {1..15}; do
