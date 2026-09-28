@@ -25,7 +25,7 @@ Se mantendrán dos ramas permanentes:
 - `develop`: integración de funcionalidades y correcciones; despliega automáticamente a DEV.
 - `main`: registro protegido del código liberado; valida el código, pero no vuelve a construir ni desplegar el candidato.
 
-Los ambientes no se representarán mediante ramas. Se utilizarán tres GitHub Environments de deployment: `dev`, `qa` y `prod`. El sign-off funcional se registra mediante una revisión requerida del PR release; no se modela como un Environment porque no es un destino de deployment.
+Los ambientes no se representarán mediante ramas. Se utilizarán tres GitHub Environments de deployment: `dev`, `qa` y `prod`, además de `qa-signoff` como Environment lógico sin infraestructura ni secrets. Este último hace visible la aceptación funcional como gate manual posterior a las pruebas QA.
 
 ```text
 feature/*, fix/*
@@ -62,25 +62,25 @@ Referencias de los patrones comparados:
 1. No se permite push directo a `develop` ni a `main`.
 2. `feature/*` y `fix/*` se integran mediante PR hacia `develop`.
 3. Después de seleccionar un SHA validado en DEV se crea `release/<versión>` y se abre PR hacia `main`; el PR permanece abierto durante QA.
-4. `hotfix/*` nace de `main`, regresa mediante PR a `main` y, después del deployment, se sincroniza obligatoriamente con `develop`.
+4. `hotfix/*` nace de `main`, ejecuta solamente CI y se integra mediante PR en `develop`; el push de `develop` genera el candidato que sigue el flujo normal de release hacia `main`.
 5. Todo PR requiere CI exitoso y las aprobaciones definidas en los rulesets.
 6. Un merge a `develop` despliega automáticamente a DEV.
 7. Un merge a `main` valida y registra código liberado, pero no genera otro artefacto.
 8. Un aprobador del Environment `qa` autoriza instalar en QA el candidato fijado por el PR `release/* → main`.
-9. El PR permanece abierto durante las pruebas funcionales; `QA sign-off` es una revisión requerida asociada a su HEAD, mientras deployment y smoke tests aportan checks para el mismo digest.
+9. El PR permanece abierto durante las pruebas funcionales; `QA sign-off` es un job protegido por el Environment `qa-signoff`, posterior al deployment y las pruebas del mismo digest.
 10. Un sign-off exitoso habilita el merge del candidato en `main`; PROD solo puede iniciarse después de ese merge.
 11. DEV, QA y PROD deben recibir exactamente el mismo artefacto; CD no recompila.
 12. La trazabilidad mínima incluye versión, SHA, digest, run de CI, rama de origen y timestamp.
 13. Una aprobación manual no puede sustituir una validación QA fallida: PROD exige smoke evidence y sign-off funcional de QA para el mismo SHA y digest.
 14. `release/*` es inmutable. Un cambio de código durante QA rechaza el release; la corrección produce desde `develop` un SHA y digest nuevos e invalida toda evidencia anterior.
 15. Una rama temporal `release/*` fija el candidato, no representa un ambiente, no genera otra imagen por promoción y se elimina después del merge.
-16. Un check obligatorio valida las rutas de PR, exige que releases y hotfixes contengan `main`, y restringe merges adicionales en hotfixes.
+16. Un check obligatorio valida las rutas de PR y exige que releases contengan el estado actual de `main`.
 
 ### Consecuencias positivas
 
 - Se elimina la rama permanente `qa` y los merges usados únicamente para representar promociones.
 - Se separa integración de código estable sin introducir una rama por ambiente.
-- Los hotfixes solo necesitan sincronizarse entre dos ramas permanentes.
+- Los hotfixes usan los mismos gates CI y el mismo punto de construcción controlado en `develop`.
 - GitHub Environments asume la protección, configuración e historia de deployments.
 - Se mantiene una barrera clara antes de incorporar cambios a `main`.
 - La estrategia permite evolucionar gradualmente sin adoptar trunk-based antes de contar con los controles necesarios.
@@ -90,7 +90,7 @@ Referencias de los patrones comparados:
 - El merge o registro en `main` puede crear un SHA diferente; por ello la implementación empresarial debe verificar la equivalencia del árbol liberado y el `source_sha` del digest promovido.
 - Resolver candidatos entre workflows exige conservar el artefacto y sus metadatos durante toda la validación; un candidato expirado no puede promoverse.
 - `develop` puede experimentar inestabilidad temporal; PR, CI y DEV deben detectarla antes de promover a `main`.
-- Mantener dos ramas implica sincronización explícita de hotfixes.
+- Un hotfix urgente debe integrarse en `develop` antes de poder generar y promover un candidato.
 
 ### Alternativas descartadas
 
@@ -133,11 +133,11 @@ Por ello, `develop` no se conserva solamente por convención de Gitflow: represe
 
 ### Decisión
 
-CI restaura dependencias, compila y prueba. Build se ejecuta en paralelo con seguridad de código y validaciones de Dockerfile/IaC; calidad espera las pruebas y su cobertura. El empaquetado solo comienza cuando todos esos gates han terminado correctamente. Después se analiza el entregable final y únicamente un escaneo exitoso permite almacenar el artefacto inmutable. CD selecciona, descarga, configura, despliega y verifica ese artefacto sin recompilarlo ni volver a empaquetarlo.
+CI restaura dependencias, compila y prueba en toda rama temporal. Build se ejecuta en paralelo con seguridad de código y validaciones de Dockerfile/IaC; calidad espera las pruebas y su cobertura. El empaquetado no se ejecuta en ramas temporales: comienza únicamente con el push de integración en `develop` y después de que todos los gates terminan correctamente. Luego se analiza el entregable final y solo un escaneo exitoso permite almacenar el artefacto inmutable. CD selecciona, descarga, configura, despliega y verifica ese artefacto sin recompilarlo ni volver a empaquetarlo.
 
 La palabra *publish* de .NET significa preparar los archivos desplegables; no significa publicarlos en un registro ni desplegarlos a un ambiente. Para evitar ambigüedad, las etapas se denominan **Package deployable artifact**, **Scan packaged artifact** y **Publish immutable artifact**. El formato puede ser una imagen, ZIP, paquete o conjunto de binarios; cada formato selecciona sus controles posteriores al empaquetado.
 
-La separación se expresa mediante jobs condicionales de un único **CI/CD Pipeline**: el evento de `develop` produce el candidato, el PR release ejecuta QA y su merge ejecuta PROD. La espera funcional vive en el PR y se registra como revisión requerida. Los deployments reutilizan acciones compuestas y conservan automáticamente run, SHA, versión, rama y digest.
+La separación se expresa mediante cuatro workflows visibles: `Continuous Integration`, `Develop Delivery`, `Release to QA` y `Production Deployment`. Esta división evita grafos llenos de jobs omitidos y conserva una dependencia fuerte: el sign-off habilita el merge y su evidencia debe validarse nuevamente antes de PROD. Los deployments y validaciones reutilizan acciones compuestas y conservan run, SHA, versión, rama y digest.
 
 ### Consecuencias
 

@@ -40,21 +40,21 @@ curl http://localhost:8080/environment
 
 La automatización actual es deliberadamente mínima: implementa build y pruebas unitarias reales, y simula los gates de calidad, seguridad y escaneo del artefacto. Solo después de que todos esos gates terminan correctamente genera el paquete desplegable, verifica su digest y permite publicarlo. La promoción y los smoke tests de QA reutilizan ese mismo paquete.
 
-- `ci-cd-pipeline.yml` (`CI/CD Pipeline`) es el único workflow visible. Build/Tests, Security checks y Delivery checks comienzan después de validar la ruta; Code quality consume los resultados de pruebas. Package espera todos los gates, Artifact scan analiza el entregable ya generado y Publish almacena el candidato inmutable. DEV, QA y PROD reciben después ese mismo digest sin reconstruir.
-- `.github/actions/deploy/action.yml`: encapsula la descarga, simulación, trazabilidad y smoke tests compartidos sin aparecer como otro workflow en Actions.
+- `ci-cd-pipeline.yml` (`Continuous Integration`) muestra solamente los gates de ramas temporales. `develop-delivery.yml` construye, publica, despliega y valida DEV. `release-to-qa.yml` resuelve el candidato, despliega QA, ejecuta sus pruebas y espera `QA sign-off`. `production-deployment.yml` verifica esa aprobación antes de permitir PROD. Cada ejecución muestra únicamente las etapas que le corresponden.
+- `.github/actions/deploy/action.yml`: encapsula la descarga, verificación y simulación de despliegue. `.github/actions/smoke-test/action.yml` ejecuta después la validación compartida de DEV, QA y PROD como jobs visibles e independientes.
 - `.github/actions/resolve-candidate/action.yml`: resuelve automáticamente el run, versión y digest del candidato para evitar entradas técnicas manuales.
 
-La promoción no solicita run ID, SHA, versión ni nombre de artefacto. Son decisiones diferentes: el Environment `qa` autoriza instalar un candidato; una revisión requerida del PR registra que QA terminó sus pruebas funcionales y aceptó su HEAD y digest; el merge registra el código aprobado; y `prod` autoriza ejecutar el deployment productivo.
+La promoción no solicita run ID, SHA, versión ni nombre de artefacto. Son decisiones diferentes: el Environment `qa` autoriza instalar un candidato; `QA acceptance tests` valida el deployment; el Environment lógico `qa-signoff` registra que QA aceptó su HEAD y digest; el merge registra el código aprobado; y `prod` autoriza ejecutar el deployment productivo.
 
-El PR `release/<versión> → main` permanece abierto durante toda la validación funcional. La revisión de `QA sign-off` debe ser obligatoria: solo después de aceptar el HEAD cuyo deployment identifica el digest actual puede fusionarse. La rama release es inmutable; si el código debe cambiar, se rechaza, se genera otro candidato desde `develop` y se abre un release nuevo. Después del merge, `prod` aplica una autorización independiente.
+El PR `release/<versión> → main` permanece abierto durante toda la validación funcional. El job protegido `QA sign-off` debe ser obligatorio: solo después de aceptar el HEAD cuyo deployment identifica el digest actual puede fusionarse. La rama release es inmutable; si el código debe cambiar, se rechaza, se genera otro candidato desde `develop` y se abre un release nuevo. Después del merge, `prod` aplica una autorización independiente.
 
-El workflow de QA termina después del deployment y los smoke tests. El PR permanece abierto durante las pruebas funcionales, sin mantener un job de Actions pendiente. Configurar protección para descartar aprobaciones obsoletas cuando cambie el HEAD y exigir tanto el deployment QA exitoso como la revisión funcional antes del merge.
+Después del deployment y las pruebas de QA, el job `QA sign-off` permanece visible en estado de espera hasta la aceptación funcional. Configurar protección para cancelar evidencia obsoleta cuando cambie el HEAD y exigir `QA acceptance tests` y `QA sign-off` antes del merge.
 
 ## Configuración de GitHub
 
-Crear manualmente los Environments `dev`, `qa` y `prod`. En los tres definir el secret ficticio `DEMO_DEPLOY_TOKEN`. Configurar required reviewers en `qa` y `prod`; QA funcional se registra como revisión requerida del PR, no mediante un Environment adicional. Ningún valor secreto se registra o se incluye en el artefacto.
+Crear los Environments `dev`, `qa`, `qa-signoff` y `prod`. Definir el secret ficticio `DEMO_DEPLOY_TOKEN` solamente en los tres destinos de deployment. Configurar required reviewers en `qa`, `qa-signoff` y `prod`; `qa-signoff` es un gate lógico sin secrets. Ningún valor secreto se registra o se incluye en el artefacto.
 
-Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks `Validate`, `Build and unit tests`, `Code quality`, `Security checks`, `Delivery checks` y `Scan packaged artifact`. En `main`, exigir además el deployment QA y la revisión funcional. Los detalles y comandos de demo están en:
+Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks de CI `Validate`, `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`. `Scan packaged artifact` se ejecuta después del merge en `develop`, no sobre ramas temporales. En `main`, exigir además `QA acceptance tests` y `QA sign-off`. Los detalles y comandos de demo están en:
 
 - [Estrategia de ramas](docs/branching-strategy.md)
 - [Decisiones de arquitectura](docs/architecture-decisions.md)
@@ -67,6 +67,6 @@ Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR
 
 GitHub Environments no se crean desde los workflows porque requiere permisos administrativos y ocultaría una parte importante de la demo. El pipeline no recompila entre ambientes: DEV, QA y PROD reciben el artefacto identificado por el mismo SHA, run y digest. La versión es un metadato de promoción, no una compilación nueva.
 
-CI/DEV, QA y PROD son etapas condicionales del mismo workflow, activadas por eventos duraderos: integración en `develop`, PR release abierto o actualizado, y PR release fusionado. Los deployments reutilizan una composite action que recalcula y valida la huella antes de cada despliegue; otra acción resuelve automáticamente el candidato por SHA. No se copian identificadores manualmente.
+CI, DEV, QA y PROD se separan en workflows activados por eventos duraderos: trabajo temporal, integración en `develop`, PR release abierto o actualizado, y merge en `main`. Los deployments reutilizan una composite action que recalcula y valida la huella; otra acción resuelve automáticamente el candidato por SHA. `QA sign-off` publica evidencia inmutable que PROD vuelve a validar contra SHA, digest, versión y run antes de solicitar su aprobación.
 
 La rama permanente `qa` del modelo anterior `dev → qa → main` se reemplaza por el GitHub Environment `qa`. Las únicas ramas permanentes son `develop` y `main`; `develop` produce candidatos y `main` registra código liberado sin volver a construirlo. El Environment `prod` registra qué versión está realmente desplegada.

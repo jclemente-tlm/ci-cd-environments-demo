@@ -47,7 +47,7 @@ runs:
         test "$RUN_EVENT" = "push"
         test "$RUN_CONCLUSION" = "success"
         case "$RUN_PATH" in
-          .github/workflows/ci-cd-pipeline.yml|.github/workflows/ci-cd-pipeline.yml@*) ;;
+          .github/workflows/develop-delivery.yml|.github/workflows/develop-delivery.yml@*|.github/workflows/ci-cd-pipeline.yml|.github/workflows/ci-cd-pipeline.yml@*) ;;
           *)
             echo "::error::El artefacto candidato no fue producido por el workflow de CI confiable"
             exit 1

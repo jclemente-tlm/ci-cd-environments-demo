@@ -4,11 +4,11 @@ Este documento describe la automatización de la PoC. La matriz empresarial de c
 
 ## CI
 
-CI se ejecuta en cada push a `feature/*` y `fix/*` para dar feedback inmediato, y vuelve a ejecutarse en los PR hacia `develop` o `main`. Los pushes a ramas temporales y sus PR generan un paquete efímero para poder analizar el entregable final, pero no publican un candidato promovible ni despliegan. Solo después de superar calidad, seguridad, delivery y artifact scan, un push integrado a `develop` publica `candidate-<commit SHA>` con retención de 30 días; `Deploy DEV` depende de esa publicación.
+CI se ejecuta en cada push a `feature/*`, `fix/*` y `hotfix/*` para dar feedback inmediato, y vuelve a ejecutarse en los PR hacia `develop` o `main`. Las ramas temporales y sus PR terminan después de build, pruebas, calidad, seguridad y delivery: no generan un paquete desplegable, no publican un candidato y no despliegan. Un push integrado a `develop` repite esos gates, empaqueta y analiza el entregable, publica `candidate-<commit SHA>` con retención de 30 días y despliega DEV.
 
 En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST, SonarQube para análisis de calidad, SCA, secret scanning, container scanning e IaC scanning. Los merges repiten los controles sobre el commit integrado, pero solamente `develop` construye el candidato promovible. La PoC todavía no implementa esas herramientas y no debe interpretarse que ya estén operativas.
 
-`Publish immutable artifact` existe únicamente para el candidato producido desde `develop` o un hotfix. `Promote published artifact` resuelve después ese candidato para QA o PROD y cambia su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
+`Publish immutable artifact` existe únicamente en `Develop Delivery`. Los workflows de QA y PROD resuelven después ese candidato y cambian su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
 
 ### Grafo de dependencias acordado
 
@@ -17,6 +17,10 @@ Validate
 ├── Build and unit tests ──> Code quality ───────────────┐
 ├── Security checks ─────────────────────────────────────┤
 └── Delivery checks (Dockerfile/IaC) ────────────────────┘
+                                                          ↓
+                                    Fin si es una rama temporal
+                                                          │
+                                    Continuar solo en push de develop
                                                           ↓
                                                 Package deployable artifact
                                                           ↓
@@ -27,7 +31,7 @@ Validate
                                             DEV ──> QA ──> PROD
 ```
 
-Build y los controles de seguridad pueden ejecutarse en paralelo. Quality depende de tests porque consume cobertura. Package espera todos los gates: la política elegida es **no generar el entregable si falla calidad o seguridad**, no solamente impedir su publicación. El escaneo dependiente del formato ocurre después de Package: Trivy Image para contenedores; SCA, antivirus, SBOM o firma para ZIP y otros binarios. La PoC simula esa selección con `format=dotnet-publish`.
+Build y los controles de seguridad pueden ejecutarse en paralelo. Quality depende de tests porque consume cobertura. En ramas temporales el flujo termina al completar esos gates. En el push de `develop`, Package espera todos los gates: la política elegida es **no generar el entregable si falla calidad o seguridad**, no solamente impedir su publicación. El escaneo dependiente del formato ocurre después de Package: Trivy Image para contenedores; SCA, antivirus, SBOM o firma para ZIP y otros binarios. La PoC simula esa selección con `format=dotnet-publish`.
 
 Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí se conserva el check requerido. Por ello, un merge compuesto exclusivamente por documentación no crea artefacto ni deployment, aunque actualice `develop` o `main`. `GITHUB_TOKEN` usa solo `contents: read` en CI.
 
@@ -39,7 +43,7 @@ Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí 
 |---|---|---|
 | Aprobación del Environment `qa` | ¿Se autoriza instalar este candidato en QA? | Deployment QA del digest seleccionado |
 | Smoke tests | ¿La aplicación desplegada está técnicamente saludable? | Evidencia automática para SHA y digest |
-| `QA sign-off` | ¿QA terminó las pruebas funcionales y acepta exactamente este candidato? | Revisión requerida para el HEAD del PR release |
+| `QA sign-off` | ¿QA terminó las pruebas funcionales y acepta exactamente este candidato? | Gate manual visible para el HEAD y digest del PR release |
 | Merge `release/* → main` | ¿El código aprobado queda registrado como liberable? | Actualización protegida de `main`, sin rebuild |
 | Aprobación del Environment `prod` | ¿Se autoriza desplegar ahora en producción? | Deployment del digest aceptado por QA |
 
@@ -74,17 +78,17 @@ sequenceDiagram
     Registry->>Prod: Desplegar exactamente X
 ```
 
-Los jobs de deployment no ejecutan `dotnet build`, `dotnet publish`, `docker build` ni otro empaquetado. Una ejecución de `CI/CD Pipeline` publica el candidato y termina después de desplegar DEV. Otra ejecución del mismo workflow resuelve el artefacto por el SHA del PR, recalcula su huella SHA-256, verifica el manifiesto y despliega QA. Después inicia la aplicación y valida `/health`, `/environment` y `/version`; solo si las respuestas coinciden publica `qa-smoke-evidence-<SHA>-<CI_RUN_ID>` y finaliza.
+Las ramas temporales ejecutan solamente `Continuous Integration`. Después del merge, `Develop Delivery` empaqueta, escanea, publica el candidato y valida DEV. `Release to QA` resuelve ese artefacto por el SHA del PR, despliega QA, ejecuta pruebas de aceptación y publica evidencia después del gate manual. Ninguna promoción reconstruye el candidato.
 
 No se utiliza `workflow_run`. La acción `resolve-candidate` busca un artefacto no expirado llamado `candidate-<SHA>`, descarga sus metadatos y expone automáticamente run, versión y digest. El digest de la PoC representa el digest Docker que una implementación real resolvería desde ECR.
 
-Crear o actualizar el PR `release/* → main` selecciona explícitamente el SHA que llegará a QA. `Deploy QA` espera la autorización del Environment `qa`; después de desplegar y superar smoke tests, el workflow termina. El PR continúa abierto durante los días que duren las pruebas funcionales y no puede fusionarse hasta recibir la revisión funcional requerida de QA.
+Crear o actualizar el PR `release/* → main` selecciona explícitamente el SHA que llegará a QA. `Approve and deploy QA` espera la autorización del Environment `qa`; después del deployment, `QA acceptance tests` valida el candidato y habilita `QA sign-off`. Este último queda en estado **Waiting** hasta que el reviewer funcional acepta el HEAD y digest exactos.
 
 El sign-off se vincula al HEAD y al digest actuales del PR mediante la revisión y las protecciones de `main`. La rama release se trata como inmutable. Si recibe otro commit, GitHub descarta la aprobación y `Resolve candidate` bloquea la promoción porque ese SHA no posee un artefacto construido y validado desde DEV. La corrección entra a `develop`, crea un candidato nuevo y origina otro release.
 
 DEV cancela un deployment obsoleto cuando aparece otro más reciente. En QA, actualizar el mismo PR cancela su workflow obsoleto, mientras candidatos distintos comparten una concurrencia global y no reemplazan silenciosamente el ambiente. PROD nunca cancela un deployment iniciado por otro release.
 
-Un sign-off exitoso habilita el merge del PR, no el deployment directo a PROD. El evento `pull_request: closed` con `merged == true` inicia los jobs de PROD del mismo workflow, recupera `pull_request.head.sha`, resuelve el digest aceptado por QA, solicita la aprobación de `prod` y despliega el mismo artefacto.
+Un sign-off exitoso habilita el merge del PR, no el deployment directo a PROD. El push resultante en `main` inicia `Production Deployment`, recupera el SHA original del PR, resuelve el candidato y exige `Verify QA sign-off`. Ese job descarga la evidencia del workflow QA y compara SHA, digest, versión y run antes de habilitar `Approve and deploy PROD`.
 
 Los workflows usan las acciones de deployment obtenidas desde la rama base protegida, no desde el código propuesto por el PR. Esto evita que una rama release modifique la lógica que recibirá secrets del Environment antes de ser fusionada.
 
@@ -96,7 +100,7 @@ GitHub permite esperar hasta 30 días por una aprobación de Environment y limit
 
 ## Política de Pull Requests
 
-El job `Validate` es la puerta de entrada de las validaciones. En un PR comprueba la ruta antes de iniciar build, calidad, seguridad y delivery. Permite `feature/*`, `fix/*` y `refactor/*` hacia `develop`, `release/*` y `hotfix/*` hacia `main`, y `main` hacia `develop` para resincronización. Releases y hotfixes deben contener el estado actual de `main`; los hotfixes además no pueden incluir merges de otra línea de desarrollo. En un push, el trigger limita las ramas autorizadas antes de crear la ejecución. Sus pasos conservan nombres específicos para que el resumen muestre qué regla se validó.
+El job `Validate` es la puerta de entrada de las validaciones. En un PR comprueba la ruta antes de iniciar build, calidad, seguridad y delivery. Permite `feature/*`, `fix/*`, `refactor/*` y `hotfix/*` hacia `develop`, `release/*` hacia `main`, y `main` hacia `develop` para resincronización. Releases deben contener el estado actual de `main`. En un push, el trigger limita las ramas autorizadas antes de crear la ejecución. Sus pasos conservan nombres específicos para que el resumen muestre qué regla se validó.
 
 ## Fallas en QA
 
@@ -118,4 +122,4 @@ Cada job de deployment genera un resumen con aplicación, Environment, branch, S
 - Concurrencia de CI cancela ejecuciones obsoletas de una misma referencia.
 - Ninguna credencial cloud ni permisos `write` son necesarios.
 
-La reducción de configuración duplicada proviene de `.github/actions/deploy/action.yml`: los tres ambientes consumen el mismo contrato, pero GitHub inyecta variables, secrets y controles propios. Al no ser un workflow, esta implementación compartida no agrega ejecuciones ni entradas a la lista de Actions.
+La reducción de configuración duplicada proviene de `.github/actions/deploy/action.yml` y `.github/actions/smoke-test/action.yml`: los tres ambientes consumen contratos comunes para deployment y validación, pero los jobs y gates permanecen visibles en el grafo de Actions.

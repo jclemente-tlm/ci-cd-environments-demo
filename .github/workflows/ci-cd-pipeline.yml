@@ -1,21 +1,19 @@
-name: CI/CD Pipeline
+name: Continuous Integration
 
 on:
   push:
-    branches: [main, develop, 'feature/**', 'fix/**', 'hotfix/**']
+    branches: ['feature/**', 'fix/**', 'refactor/**', 'sync/**', 'hotfix/**']
     paths-ignore: ['**/*.md', 'docs/**']
   pull_request:
-    branches: [main, develop]
+    branches: [develop]
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
-  pull-requests: read
 
 concurrency:
-  group: pipeline-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -23,82 +21,27 @@ jobs:
     name: Validate
     runs-on: ubuntu-latest
     steps:
-      - name: Authorize push branch
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          case "$GITHUB_REF_NAME" in
-            main|develop|feature/*|fix/*|hotfix/*)
-              echo "Rama autorizada para este evento: $GITHUB_REF_NAME"
-              ;;
-            *)
-              echo "Rama no autorizada para CI/CD: $GITHUB_REF_NAME" >&2
-              exit 1
-              ;;
-          esac
-      - name: Authorize manual execution branch
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        run: |
-          case "$GITHUB_REF_NAME" in
-            main|develop|feature/*|fix/*|refactor/*|sync/*|release/*|hotfix/*)
-              echo "Rama autorizada para ejecución manual: $GITHUB_REF_NAME"
-              ;;
-            *)
-              echo "Rama no autorizada para ejecución manual: $GITHUB_REF_NAME" >&2
-              exit 1
-              ;;
-          esac
-      - uses: actions/checkout@v4
-        if: github.event_name == 'pull_request'
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-      - name: Validate source, destination and ancestry
-        if: github.event_name == 'pull_request'
+      - name: Validate branch or PR route
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BASE_BRANCH: ${{ github.base_ref }}
-          HEAD_BRANCH: ${{ github.head_ref }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
-          case "$BASE_BRANCH:$HEAD_BRANCH" in
-            develop:feature/*|develop:fix/*|develop:refactor/*|develop:sync/*|develop:main|main:develop|main:release/*|main:hotfix/*)
-              ;;
-            *)
-              echo "Ruta de PR no permitida: $HEAD_BRANCH -> $BASE_BRANCH" >&2
-              exit 1
-              ;;
-          esac
-
-          if [[ "$BASE_BRANCH:$HEAD_BRANCH" == "main:develop" ]]; then
-            git fetch --no-tags origin main
-            if git cat-file -e origin/main:.github/actions/resolve-candidate/action.yml 2>/dev/null; then
-              echo "La instalación inicial ya terminó; use release/* o hotfix/* para integrar en main." >&2
-              exit 1
-            fi
-            echo "Bootstrap permitido: main todavía no contiene las acciones confiables de promoción."
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            case "$BASE_BRANCH:$HEAD_BRANCH" in
+              develop:feature/*|develop:fix/*|develop:refactor/*|develop:sync/*|develop:hotfix/*|develop:main) ;;
+              *) echo "Ruta de PR no permitida: $HEAD_BRANCH -> $BASE_BRANCH" >&2; exit 1 ;;
+            esac
+          else
+            case "$HEAD_BRANCH" in
+              feature/*|fix/*|refactor/*|sync/*|hotfix/*|develop|main) ;;
+              *) echo "Rama no autorizada para CI: $HEAD_BRANCH" >&2; exit 1 ;;
+            esac
           fi
-
-          if [[ "$HEAD_BRANCH" == release/* || "$HEAD_BRANCH" == hotfix/* ]]; then
-            git fetch --no-tags origin main
-            git merge-base --is-ancestor origin/main HEAD || {
-              echo "$HEAD_BRANCH debe incluir el estado actual de main." >&2
-              exit 1
-            }
-          fi
-
-          if [[ "$HEAD_BRANCH" == hotfix/* ]]; then
-            if git rev-list --merges origin/main..HEAD | grep -q .; then
-              echo "$HEAD_BRANCH no debe contener merges de otra línea de desarrollo." >&2
-              exit 1
-            fi
-          fi
-
-          echo "Ruta de PR permitida: $HEAD_BRANCH -> $BASE_BRANCH"
 
   build-test:
     name: Build and unit tests
     needs: validate
-    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,14 +57,9 @@ jobs:
       - name: Test
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory TestResults
       - name: Generate simulated coverage report
-        shell: bash
         run: |
           mkdir -p reports/coverage
-          printf '%s\n' \
-            '<?xml version="1.0" encoding="utf-8"?>' \
-            '<CoverageSession simulated="true" line-rate="0.82" branch-rate="0.76" />' \
-            > reports/coverage/coverage.opencover.xml
-          echo "SIMULATED: reporte OpenCover generado para demostrar la entrada de SonarQube."
+          printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<CoverageSession simulated="true" line-rate="0.82" branch-rate="0.76" />' > reports/coverage/coverage.opencover.xml
       - name: Publish test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -134,413 +72,41 @@ jobs:
         with:
           name: coverage-${{ github.run_id }}
           path: reports/coverage/coverage.opencover.xml
-          if-no-files-found: error
-      - name: Bundle compiled output for the downstream packaging job
-        run: tar -cf compiled-output.tar src/Cicd.Demo.Api/bin/Release src/Cicd.Demo.Api/obj
-      - name: Preserve compiled output for packaging
-        uses: actions/upload-artifact@v4
-        with:
-          name: compiled-output-${{ github.run_id }}
-          path: compiled-output.tar
-          if-no-files-found: error
-          retention-days: 1
-
-  promote-artifact:
-    name: Promote published artifact
-    needs: [validate, artifact-scan]
-    if: >-
-      always() &&
-      (
-        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-        (
-          needs.artifact-scan.result == 'success' &&
-          github.event_name == 'pull_request' &&
-          (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
-        )
-      )
-    runs-on: ubuntu-latest
-    outputs:
-      artifact_run_id: ${{ steps.promotion.outputs.artifact_run_id }}
-      artifact_name: ${{ steps.promotion.outputs.artifact_name }}
-      artifact_digest: ${{ steps.promotion.outputs.artifact_digest }}
-      version: ${{ steps.promotion.outputs.version }}
-      source_sha: ${{ steps.promotion.outputs.source_sha }}
-    steps:
-      - name: Checkout trusted actions for QA
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-      - name: Resolve DEV artifact for QA
-        id: qa_candidate
-        if: github.event_name == 'pull_request'
-        uses: ./.github/actions/resolve-candidate
-        with:
-          commit_sha: ${{ github.event.pull_request.head.sha }}
-      - name: Promote artifact to QA
-        if: github.event_name == 'pull_request'
-        shell: bash
-        env:
-          ARTIFACT_RUN_ID: ${{ steps.qa_candidate.outputs.artifact_run_id }}
-          ARTIFACT_NAME: ${{ steps.qa_candidate.outputs.artifact_name }}
-          ARTIFACT_DIGEST: ${{ steps.qa_candidate.outputs.artifact_digest }}
-          ARTIFACT_VERSION: ${{ steps.qa_candidate.outputs.version }}
-        run: |
-          printf 'artifact_run_id=%s\nartifact_name=%s\nartifact_digest=%s\nversion=%s\nsource_sha=%s\n' \
-            "$ARTIFACT_RUN_ID" "$ARTIFACT_NAME" "$ARTIFACT_DIGEST" "$ARTIFACT_VERSION" \
-            "${{ github.event.pull_request.head.sha }}" > promotion.env
-          {
-            echo "## Promoción QA — SIMULATED"
-            echo "- Referencia: ${ARTIFACT_VERSION}-dev → ${ARTIFACT_VERSION}-rc"
-            echo "- Mismo digest, sin reconstrucción: $ARTIFACT_DIGEST"
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Checkout trusted actions for PROD
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/checkout@v4
-      - name: Identify merged release
-        id: release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          RELEASE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
-            --jq 'map(select(.merged_at != null and .base.ref == "main" and ((.head.ref | startswith("release/")) or (.head.ref | startswith("hotfix/"))))) | first | [.head.sha, .head.ref] | @tsv')
-          test -n "$RELEASE"
-          IFS=$'\t' read -r SOURCE_SHA _ <<< "$RELEASE"
-          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-      - name: Resolve QA artifact for PROD
-        id: prod_candidate
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: ./.github/actions/resolve-candidate
-        with:
-          commit_sha: ${{ steps.release.outputs.source_sha }}
-      - name: Promote artifact to PROD
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: bash
-        env:
-          ARTIFACT_RUN_ID: ${{ steps.prod_candidate.outputs.artifact_run_id }}
-          ARTIFACT_NAME: ${{ steps.prod_candidate.outputs.artifact_name }}
-          ARTIFACT_DIGEST: ${{ steps.prod_candidate.outputs.artifact_digest }}
-          ARTIFACT_VERSION: ${{ steps.prod_candidate.outputs.version }}
-        run: |
-          printf 'artifact_run_id=%s\nartifact_name=%s\nartifact_digest=%s\nversion=%s\nsource_sha=%s\n' \
-            "$ARTIFACT_RUN_ID" "$ARTIFACT_NAME" "$ARTIFACT_DIGEST" "$ARTIFACT_VERSION" \
-            "${{ steps.release.outputs.source_sha }}" > promotion.env
-          {
-            echo "## Promoción PROD — SIMULATED"
-            echo "- Referencia: ${ARTIFACT_VERSION}-rc → ${ARTIFACT_VERSION}"
-            echo "- Mismo digest, sin reconstrucción: $ARTIFACT_DIGEST"
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Expose promoted artifact
-        id: promotion
-        shell: bash
-        run: |
-          test -s promotion.env
-          cat promotion.env >> "$GITHUB_OUTPUT"
 
   code-quality:
     name: Code quality
     needs: build-test
-    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Download coverage report
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: coverage-${{ github.run_id }}
           path: reports/coverage
       - name: Simulate SonarQube Quality Gate
-        shell: bash
         run: |
           test -s reports/coverage/coverage.opencover.xml
           grep -q 'simulated="true"' reports/coverage/coverage.opencover.xml
-          {
-            echo "## Code quality — SIMULATED"
-            echo "- Coverage report: OpenCover disponible"
-            echo "- SonarQube Quality Gate: OK"
-            echo "- Política: block"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "## Code quality — SIMULATED" >> "$GITHUB_STEP_SUMMARY"
 
   security-checks:
     name: Security checks
     needs: validate
-    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Simulate Semgrep SAST
+      - name: Simulate security gates
         run: |
-          echo "SIMULATED: Semgrep SAST sin hallazgos bloqueantes."
-      - name: Simulate Gitleaks secret scanning
-        run: |
-          echo "SIMULATED: Gitleaks no detectó secretos."
-      - name: Simulate OWASP Dependency Check
-        run: |
-          echo "SIMULATED: Dependency Check sin vulnerabilidades críticas."
-      - name: Record simulated security results
-        run: |
-          {
-            echo "## Security checks — SIMULATED"
-            echo "- Semgrep: pass — block"
-            echo "- Gitleaks: pass — block"
-            echo "- Dependency Check: pass — crítico bloquea, alto advierte"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "SIMULATED: Semgrep SAST"
+          echo "SIMULATED: Gitleaks secret scanning"
+          echo "SIMULATED: OWASP Dependency Check"
 
   delivery-checks:
     name: Delivery checks
     needs: validate
-    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Simulate Hadolint
+      - name: Simulate delivery gates
         run: |
-          echo "SIMULATED: Hadolint report only."
-      - name: Simulate Checkov IaC scan
-        run: |
-          echo "SIMULATED: Checkov sin hallazgos bloqueantes; no hay IaC real en la PoC."
-      - name: Record simulated delivery results
-        run: |
-          {
-            echo "## Delivery checks — SIMULATED"
-            echo "- Hadolint: report only"
-            echo "- Checkov: pass — block cuando exista IaC"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  package:
-    name: Package deployable artifact
-    needs: [build-test, code-quality, security-checks, delivery-checks]
-    if: >-
-      needs.build-test.result == 'success' &&
-      needs.code-quality.result == 'success' &&
-      needs.security-checks.result == 'success' &&
-      needs.delivery-checks.result == 'success'
-    runs-on: ubuntu-latest
-    outputs:
-      artifact_digest: ${{ steps.identity.outputs.digest }}
-      artifact_name: ${{ steps.identity.outputs.name }}
-      version: ${{ steps.identity.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-      - name: Download compiled output
-        uses: actions/download-artifact@v4
-        with:
-          name: compiled-output-${{ github.run_id }}
-          path: .
-      - name: Restore compiled output paths
-        run: tar -xf compiled-output.tar
-      - name: Package application without rebuilding
-        run: dotnet publish src/Cicd.Demo.Api/Cicd.Demo.Api.csproj --configuration Release --no-build --no-restore --output artifacts/app /p:UseAppHost=false
-      - name: Create immutable artifact identity
-        id: identity
-        shell: bash
-        run: |
-          (
-            cd artifacts/app
-            find . -type f -print0 | sort -z | xargs -0 sha256sum
-          ) > artifacts/checksums.sha256
-          DIGEST="sha256:$(sha256sum artifacts/checksums.sha256 | cut -d' ' -f1)"
-          VERSION="0.1.0-${GITHUB_RUN_ID}"
-          ARTIFACT_NAME="candidate-${GITHUB_SHA}"
-          printf 'source_sha=%s\nsource_branch=%s\nsource_run=%s\nversion=%s\ndigest=%s\nformat=%s\n' \
-            "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$VERSION" "$DIGEST" "dotnet-publish" \
-            > artifacts/candidate.env
-          {
-            echo "digest=$DIGEST"
-            echo "version=$VERSION"
-            echo "name=$ARTIFACT_NAME"
-          } >> "$GITHUB_OUTPUT"
-      - name: Upload artifact for scanning
-        uses: actions/upload-artifact@v4
-        with:
-          name: packaged-output-${{ github.run_id }}
-          path: artifacts
-          if-no-files-found: error
-          retention-days: 1
-
-  artifact-scan:
-    name: Scan packaged artifact
-    needs: package
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download packaged artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: packaged-output-${{ github.run_id }}
-          path: artifacts
-      - name: Verify artifact integrity
-        shell: bash
-        env:
-          EXPECTED_DIGEST: ${{ needs.package.outputs.artifact_digest }}
-        run: |
-          test -s artifacts/candidate.env
-          test -s artifacts/checksums.sha256
-          ACTUAL_DIGEST="sha256:$(sha256sum artifacts/checksums.sha256 | cut -d' ' -f1)"
-          test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
-          (cd artifacts/app && sha256sum --check ../checksums.sha256)
-      - name: Simulate scan selected by artifact format
-        shell: bash
-        run: |
-          FORMAT=$(sed -n 's/^format=//p' artifacts/candidate.env)
-          case "$FORMAT" in
-            docker-image)
-              echo "SIMULATED: Trivy Image analiza la imagen ya construida."
-              ;;
-            dotnet-publish)
-              echo "SIMULATED: SCA, antivirus y SBOM analizan los binarios antes de comprimirlos como ZIP."
-              ;;
-            *)
-              echo "Formato de artefacto no soportado: $FORMAT" >&2
-              exit 1
-              ;;
-          esac
-          {
-            echo "## Artifact scan — SIMULATED"
-            echo "- Formato: $FORMAT"
-            echo "- Digest verificado: ${{ needs.package.outputs.artifact_digest }}"
-            echo "- Política: block"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  publish-artifact:
-    name: Publish immutable artifact
-    needs: [package, artifact-scan]
-    if: >-
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
-    runs-on: ubuntu-latest
-    outputs:
-      artifact_run_id: ${{ steps.publication.outputs.artifact_run_id }}
-      artifact_name: ${{ steps.publication.outputs.artifact_name }}
-      artifact_digest: ${{ steps.publication.outputs.artifact_digest }}
-      version: ${{ steps.publication.outputs.version }}
-      source_sha: ${{ steps.publication.outputs.source_sha }}
-    steps:
-      - name: Download scanned artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: packaged-output-${{ github.run_id }}
-          path: artifacts
-      - name: Prepare publication metadata
-        id: publication
-        shell: bash
-        env:
-          ARTIFACT_NAME: ${{ needs.package.outputs.artifact_name }}
-          ARTIFACT_DIGEST: ${{ needs.package.outputs.artifact_digest }}
-          ARTIFACT_VERSION: ${{ needs.package.outputs.version }}
-        run: |
-          grep -Fxq "digest=$ARTIFACT_DIGEST" artifacts/candidate.env
-          {
-            echo "artifact_run_id=$GITHUB_RUN_ID"
-            echo "artifact_name=$ARTIFACT_NAME"
-            echo "artifact_digest=$ARTIFACT_DIGEST"
-            echo "version=$ARTIFACT_VERSION"
-            echo "source_sha=$GITHUB_SHA"
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo "## Publicación de candidato DEV"
-            echo "- Artefacto: $ARTIFACT_NAME"
-            echo "- Versión: $ARTIFACT_VERSION"
-            echo "- Digest: $ARTIFACT_DIGEST"
-            echo "- Contenido generado una sola vez; las promociones no reconstruyen."
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Store immutable candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ needs.package.outputs.artifact_name }}
-          path: artifacts
-          if-no-files-found: error
-          retention-days: 30
-
-  deploy-dev:
-    name: Deploy DEV
-    needs: publish-artifact
-    if: >-
-      github.event_name == 'push' &&
-      (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
-    runs-on: ubuntu-latest
-    environment: dev
-    concurrency:
-      group: deployment-dev
-      cancel-in-progress: true
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/deploy
-        with:
-          environment: dev
-          artifact_run_id: ${{ needs.publish-artifact.outputs.artifact_run_id }}
-          artifact_name: ${{ needs.publish-artifact.outputs.artifact_name }}
-          artifact_digest: ${{ needs.publish-artifact.outputs.artifact_digest }}
-          commit_sha: ${{ github.sha }}
-          branch: ${{ github.ref_name }}
-          version: ${{ needs.publish-artifact.outputs.version }}
-          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
-
-  deploy-qa:
-    name: Deploy QA
-    needs: promote-artifact
-    if: >-
-      github.event_name == 'pull_request' &&
-      (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
-    runs-on: ubuntu-latest
-    environment: qa
-    concurrency:
-      group: deployment-qa
-      cancel-in-progress: false
-    steps:
-      - name: Checkout trusted deployment actions
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-      - uses: ./.github/actions/deploy
-        with:
-          environment: qa
-          artifact_run_id: ${{ needs.promote-artifact.outputs.artifact_run_id }}
-          artifact_name: ${{ needs.promote-artifact.outputs.artifact_name }}
-          artifact_digest: ${{ needs.promote-artifact.outputs.artifact_digest }}
-          commit_sha: ${{ github.event.pull_request.head.sha }}
-          branch: ${{ github.head_ref }}
-          version: ${{ needs.promote-artifact.outputs.version }}
-          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
-          validate_qa: 'true'
-      - name: Record candidate under functional validation
-        env:
-          RELEASE_BRANCH: ${{ github.head_ref }}
-        run: |
-          {
-            echo "## Candidato listo en QA"
-            echo "| Campo | Valor |"
-            echo "|---|---|"
-            echo "| Pull request | #${{ github.event.pull_request.number }} |"
-            echo "| Rama de liberación | $RELEASE_BRANCH |"
-            echo "| Commit de origen | ${{ github.event.pull_request.head.sha }} |"
-            echo "| Versión | ${{ needs.promote-artifact.outputs.version }} |"
-            echo "| Digest del artefacto | ${{ needs.promote-artifact.outputs.artifact_digest }} |"
-            echo "| Ejecución de CI | ${{ needs.promote-artifact.outputs.artifact_run_id }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  deploy-prod:
-    name: Deploy PROD
-    needs: promote-artifact
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: prod
-    concurrency:
-      group: deployment-prod
-      cancel-in-progress: false
-    steps:
-      - name: Checkout trusted deployment actions
-        uses: actions/checkout@v4
-      - uses: ./.github/actions/deploy
-        with:
-          environment: prod
-          artifact_run_id: ${{ needs.promote-artifact.outputs.artifact_run_id }}
-          artifact_name: ${{ needs.promote-artifact.outputs.artifact_name }}
-          artifact_digest: ${{ needs.promote-artifact.outputs.artifact_digest }}
-          commit_sha: ${{ needs.promote-artifact.outputs.source_sha }}
-          branch: main
-          version: ${{ needs.promote-artifact.outputs.version }}
-          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
+          echo "SIMULATED: Hadolint"
+          echo "SIMULATED: Checkov IaC scan"

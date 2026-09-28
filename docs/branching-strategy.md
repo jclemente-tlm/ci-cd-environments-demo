@@ -89,12 +89,12 @@ Mientras el PR release permanece abierto, `develop` puede continuar recibiendo c
 | `feature/*` | `develop` | `develop` | Funcionalidad nueva |
 | `fix/*` | `develop` | `develop` | Corrección normal |
 | `refactor/*` | `develop` | `develop` | Mejora interna sin nueva funcionalidad |
-| `hotfix/*` | `main` | `main` | Incidente urgente; genera un candidato aislado y recorre DEV, QA y PROD |
+| `hotfix/*` | `main` | `develop` | Incidente urgente; ejecuta CI, se integra en `develop` y desde allí genera el candidato que recorre DEV, QA y PROD |
 | `release/*` | SHA candidato de `develop` | `main` | Fijar el candidato durante QA y registrar el código después del sign-off |
 
 Ejemplos: `feature/add-version-endpoint`, `fix/version-format` y `hotfix/critical-api-error`. Deben ser breves y eliminarse tras el merge.
 
-Después de promover un hotfix a PROD es obligatorio abrir un PR `main → develop`. Esto devuelve la corrección a la línea de integración y evita que un release posterior la revierta. Si hay conflictos, se resuelven en ese PR y se conserva el historial; no se hace force-push.
+Un hotfix no se empaqueta desde su rama temporal. Después de validarlo se integra en `develop`, donde el push protegido genera el candidato inmutable. A continuación se crea `release/*` desde ese SHA y se recorre QA y PROD con el flujo normal.
 
 ### Correcciones encontradas en QA
 
@@ -104,13 +104,13 @@ En una evolución con ambientes efímeros podrá corregirse directamente sobre `
 
 ## Pull requests y protección recomendada
 
-Flujos permitidos: `feature/* → develop`, `fix/* → develop`, `refactor/* → develop`, `release/* → main`, `hotfix/* → main` y `main → develop` para resincronización. Una rama `release/*` fija el SHA ya probado; no recompila ni representa un Environment.
+Flujos permitidos: `feature/* → develop`, `fix/* → develop`, `refactor/* → develop`, `hotfix/* → develop`, `release/* → main` y `main → develop` para resincronización. Una rama `release/*` fija el SHA ya probado; no recompila, no empaqueta ni representa un Environment.
 
 Crear rulesets manuales para `main` y `develop`:
 
 - bloquear push directo y force-push;
 - requerir pull request y al menos una aprobación;
-- exigir los checks `Validate`, `Build and unit tests`, `Code quality`, `Security checks`, `Delivery checks` y `Scan packaged artifact`, además de la resolución de conversaciones;
+- exigir los checks de rama temporal `Validate`, `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`, además de la resolución de conversaciones;
 - exigir rama actualizada antes del merge cuando el ritmo del equipo lo permita;
 - restringir borrado y limitar excepciones a administradores designados.
 
@@ -118,9 +118,9 @@ Para `main` conviene usar mayor número de revisores o CODEOWNERS. La protecció
 
 El PR `release/* → main` debe crearse desde el SHA exacto asociado al digest candidato. Esto impide que nuevos commits de `develop` cambien silenciosamente el alcance mientras QA valida. La automatización empresarial deberá verificar esa correspondencia antes del merge.
 
-El release también debe contener el estado actual de `main`. Si un hotfix modifica `main` durante QA, no se actualiza silenciosamente la rama ya aprobada: se sincroniza primero `main → develop`, se genera un candidato nuevo y se repite la validación.
+El release también debe contener el estado actual de `main`. Si otra liberación modifica `main` durante QA, no se actualiza silenciosamente la rama ya aprobada: se sincroniza primero `main → develop`, se genera un candidato nuevo y se repite la validación.
 
-El orden obligatorio es: seleccionar un SHA validado en DEV, crear `release/*`, abrir el PR hacia `main`, desplegar y validar ese candidato en QA, obtener la revisión funcional, fusionar el PR y finalmente aprobar PROD. La rama se elimina tras el merge. Los checks y la resolución automática del candidato relacionan PR, `source_sha` y digest.
+El orden obligatorio es: seleccionar un SHA validado en DEV, crear `release/*`, abrir el PR hacia `main`, autorizar el deployment QA, ejecutar las pruebas de aceptación, aprobar el gate visible `QA sign-off`, fusionar el PR y finalmente aprobar PROD. La rama se elimina tras el merge. Los checks y la resolución automática del candidato relacionan PR, `source_sha` y digest.
 
 ## Ventajas y costes aceptados
 
@@ -145,13 +145,13 @@ El PR, y no un workflow pendiente, conserva el estado durante las pruebas funcio
 - QA se despliega desde el SHA fijado por `release/*`, nunca desde `develop` o un tag móvil.
 - `release/*` es inmutable después de su creación; una corrección produce otro candidato en `develop` y otro release.
 - El PR release permanece abierto mientras QA ejecuta pruebas funcionales.
-- `QA sign-off` debe registrarse como revisión requerida para el HEAD actual del PR; el deployment QA y sus smoke tests son checks separados.
+- `QA sign-off` debe registrarse mediante el Environment lógico `qa-signoff` para el HEAD actual del PR; el deployment QA y sus pruebas de aceptación son jobs previos separados.
 - Cualquier cambio de commit o digest invalida la evidencia y el sign-off anteriores.
-- Si `main` cambia durante la validación —por ejemplo, por un hotfix— el release se considera desactualizado: debe resincronizarse mediante un candidato nuevo y repetir DEV y QA antes del merge.
+- Si `main` cambia durante la validación por otra liberación, el release se considera desactualizado: debe resincronizarse mediante un candidato nuevo y repetir DEV y QA antes del merge.
 - El merge en `main` no reconstruye el candidato.
 - PROD solo acepta el digest aprobado por QA y registrado por el release fusionado.
 - Las ramas release se eliminan después del merge.
-- Las correcciones de release y hotfix deben regresar a `develop` cuando no estén ya presentes.
+- Los hotfixes deben integrarse en `develop` antes de crear el candidato y la rama release correspondiente.
 
 ## Alternativas y evolución
 
