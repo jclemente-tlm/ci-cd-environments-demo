@@ -137,7 +137,7 @@ CI restaura dependencias, compila y prueba en toda rama temporal. Build se ejecu
 
 La palabra *publish* de .NET significa preparar los archivos desplegables; no significa publicarlos en un registro ni desplegarlos a un ambiente. Para evitar ambigüedad, las etapas se denominan **Package deployable artifact**, **Scan packaged artifact** y **Publish immutable artifact**. El formato puede ser una imagen, ZIP, paquete o conjunto de binarios; cada formato selecciona sus controles posteriores al empaquetado.
 
-La separación se expresa mediante jobs condicionales de un único **CI/CD Pipeline**: el evento de `develop` produce y valida el candidato en DEV, el PR release ejecuta QA y espera `QA sign-off`, y su merge ejecuta PROD y sus smoke tests. Los deployments y validaciones reutilizan acciones compuestas y conservan automáticamente run, SHA, versión, rama y digest.
+La separación se expresa mediante cuatro workflows visibles: `Continuous Integration`, `Develop Delivery`, `Release to QA` y `Production Deployment`. Esta división evita grafos llenos de jobs omitidos y conserva una dependencia fuerte: el sign-off habilita el merge y su evidencia debe validarse nuevamente antes de PROD. Los deployments y validaciones reutilizan acciones compuestas y conservan run, SHA, versión, rama y digest.
 
 ### Consecuencias
 

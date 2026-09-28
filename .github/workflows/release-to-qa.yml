@@ -1,0 +1,173 @@
+name: Release to QA
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: release-qa-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate-release:
+    name: Validate release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Validate route and ancestry
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          [[ "$HEAD_BRANCH" == release/* ]] || { echo "Solo release/* puede promover a main" >&2; exit 1; }
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor origin/main HEAD || { echo "$HEAD_BRANCH debe incluir main" >&2; exit 1; }
+
+  build-test:
+    name: Build and unit tests
+    needs: validate-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+      - run: dotnet restore
+      - run: dotnet build --configuration Release --no-restore
+      - run: dotnet test --configuration Release --no-build
+      - name: Generate simulated coverage
+        run: |
+          mkdir -p reports/coverage
+          printf '%s\n' '<CoverageSession simulated="true" />' > reports/coverage/coverage.opencover.xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-coverage-${{ github.run_id }}
+          path: reports/coverage/coverage.opencover.xml
+
+  code-quality:
+    name: Code quality
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-coverage-${{ github.run_id }}
+          path: reports/coverage
+      - run: grep -q 'simulated="true"' reports/coverage/coverage.opencover.xml
+
+  security-checks:
+    name: Security checks
+    needs: validate-release
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "SIMULATED: SAST, secrets and dependency checks"
+
+  delivery-checks:
+    name: Delivery checks
+    needs: validate-release
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "SIMULATED: Dockerfile and IaC checks"
+
+  resolve-candidate:
+    name: Resolve DEV candidate
+    needs: [build-test, code-quality, security-checks, delivery-checks]
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_run_id: ${{ steps.candidate.outputs.artifact_run_id }}
+      artifact_name: ${{ steps.candidate.outputs.artifact_name }}
+      artifact_digest: ${{ steps.candidate.outputs.artifact_digest }}
+      version: ${{ steps.candidate.outputs.version }}
+      source_sha: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout resolver without deployment secrets
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - id: candidate
+        uses: ./.github/actions/resolve-candidate
+        with:
+          commit_sha: ${{ github.event.pull_request.head.sha }}
+
+  deploy-qa:
+    name: Approve and deploy QA
+    needs: resolve-candidate
+    runs-on: ubuntu-latest
+    environment: qa
+    steps:
+      - name: Checkout trusted deployment action
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: ./.github/actions/deploy
+        with:
+          environment: qa
+          artifact_run_id: ${{ needs.resolve-candidate.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.resolve-candidate.outputs.artifact_name }}
+          artifact_digest: ${{ needs.resolve-candidate.outputs.artifact_digest }}
+          commit_sha: ${{ needs.resolve-candidate.outputs.source_sha }}
+          branch: ${{ github.head_ref }}
+          version: ${{ needs.resolve-candidate.outputs.version }}
+          deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
+
+  qa-acceptance-tests:
+    name: QA acceptance tests
+    needs: [resolve-candidate, deploy-qa]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout validation action without deployment secrets
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./.github/actions/smoke-test
+        with:
+          environment: qa
+          artifact_run_id: ${{ needs.resolve-candidate.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.resolve-candidate.outputs.artifact_name }}
+          artifact_digest: ${{ needs.resolve-candidate.outputs.artifact_digest }}
+          commit_sha: ${{ needs.resolve-candidate.outputs.source_sha }}
+          branch: ${{ github.head_ref }}
+          version: ${{ needs.resolve-candidate.outputs.version }}
+
+  qa-signoff:
+    name: QA sign-off
+    needs: [resolve-candidate, qa-acceptance-tests]
+    runs-on: ubuntu-latest
+    environment: qa-signoff
+    steps:
+      - name: Create QA sign-off evidence
+        env:
+          SOURCE_SHA: ${{ needs.resolve-candidate.outputs.source_sha }}
+          ARTIFACT_DIGEST: ${{ needs.resolve-candidate.outputs.artifact_digest }}
+          ARTIFACT_RUN_ID: ${{ needs.resolve-candidate.outputs.artifact_run_id }}
+          ARTIFACT_VERSION: ${{ needs.resolve-candidate.outputs.version }}
+        run: |
+          printf 'source_sha=%s\nartifact_digest=%s\nartifact_run_id=%s\nversion=%s\npull_request=%s\nqa_tests=success\nqa_signoff=approved\n' \
+            "$SOURCE_SHA" "$ARTIFACT_DIGEST" "$ARTIFACT_RUN_ID" "$ARTIFACT_VERSION" "${{ github.event.pull_request.number }}" > qa-signoff.env
+          {
+            echo "## QA sign-off aprobado"
+            echo "- Commit: $SOURCE_SHA"
+            echo "- Versión: $ARTIFACT_VERSION"
+            echo "- Digest: $ARTIFACT_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish immutable QA approval evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-signoff-evidence-${{ needs.resolve-candidate.outputs.source_sha }}
+          path: qa-signoff.env
+          if-no-files-found: error
+          retention-days: 30

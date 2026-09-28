@@ -8,7 +8,7 @@ CI se ejecuta en cada push a `feature/*`, `fix/*` y `hotfix/*` para dar feedback
 
 En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST, SonarQube para análisis de calidad, SCA, secret scanning, container scanning e IaC scanning. Los merges repiten los controles sobre el commit integrado, pero solamente `develop` construye el candidato promovible. La PoC todavía no implementa esas herramientas y no debe interpretarse que ya estén operativas.
 
-`Publish immutable artifact` existe únicamente para el candidato producido por un push de `develop`. `Promote published artifact` resuelve después ese candidato para QA o PROD y cambia su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
+`Publish immutable artifact` existe únicamente en `Develop Delivery`. Los workflows de QA y PROD resuelven después ese candidato y cambian su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
 
 ### Grafo de dependencias acordado
 
@@ -78,7 +78,7 @@ sequenceDiagram
     Registry->>Prod: Desplegar exactamente X
 ```
 
-Las ramas temporales ejecutan solamente los jobs de CI y nunca llegan a `Package deployable artifact`. Después del merge, una ejecución por push de `develop` empaqueta, escanea, publica el candidato y termina después de desplegar DEV. Otra ejecución del mismo workflow resuelve el artefacto por el SHA del PR release, recalcula su huella SHA-256, verifica el manifiesto y despliega QA. Después inicia la aplicación y valida `/health`, `/environment` y `/version`.
+Las ramas temporales ejecutan solamente `Continuous Integration`. Después del merge, `Develop Delivery` empaqueta, escanea, publica el candidato y valida DEV. `Release to QA` resuelve ese artefacto por el SHA del PR, despliega QA, ejecuta pruebas de aceptación y publica evidencia después del gate manual. Ninguna promoción reconstruye el candidato.
 
 No se utiliza `workflow_run`. La acción `resolve-candidate` busca un artefacto no expirado llamado `candidate-<SHA>`, descarga sus metadatos y expone automáticamente run, versión y digest. El digest de la PoC representa el digest Docker que una implementación real resolvería desde ECR.
 
@@ -88,7 +88,7 @@ El sign-off se vincula al HEAD y al digest actuales del PR mediante la revisión
 
 DEV cancela un deployment obsoleto cuando aparece otro más reciente. En QA, actualizar el mismo PR cancela su workflow obsoleto, mientras candidatos distintos comparten una concurrencia global y no reemplazan silenciosamente el ambiente. PROD nunca cancela un deployment iniciado por otro release.
 
-Un sign-off exitoso habilita el merge del PR, no el deployment directo a PROD. El evento `pull_request: closed` con `merged == true` inicia los jobs de PROD del mismo workflow, recupera `pull_request.head.sha`, resuelve el digest aceptado por QA, solicita la aprobación de `prod` y despliega el mismo artefacto.
+Un sign-off exitoso habilita el merge del PR, no el deployment directo a PROD. El push resultante en `main` inicia `Production Deployment`, recupera el SHA original del PR, resuelve el candidato y exige `Verify QA sign-off`. Ese job descarga la evidencia del workflow QA y compara SHA, digest, versión y run antes de habilitar `Approve and deploy PROD`.
 
 Los workflows usan las acciones de deployment obtenidas desde la rama base protegida, no desde el código propuesto por el PR. Esto evita que una rama release modifique la lógica que recibirá secrets del Environment antes de ser fusionada.
 

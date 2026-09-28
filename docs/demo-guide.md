@@ -21,7 +21,7 @@ git push -u origin feature/demo-change
 
 Primero, mostrar que el push ejecuta `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`. La rama temporal termina después de esos gates: no empaqueta, no publica un candidato promovible y no despliega en ningún ambiente.
 
-Abrir PR `feature/demo-change → develop`, mostrar nuevamente las validaciones junto con `Validate`, y hacer merge. En Actions, abrir la ejecución **CI/CD Pipeline** del push integrado a `develop` y mostrar las validaciones, la creación del candidato y `Deploy DEV`. El Summary debe indicar Environment, SHA, versión, digest y run de origen. La página de `dev` conserva el deployment.
+Abrir PR `feature/demo-change → develop`, mostrar `Continuous Integration` y hacer merge. En Actions, abrir **Develop Delivery** y mostrar las validaciones, la creación del candidato, `Deploy DEV` y `Validate DEV`. El Summary debe indicar Environment, SHA, versión, digest y run de origen.
 
 ## Escenario 2 — Promoción del mismo candidato a QA
 
@@ -36,7 +36,7 @@ git push -u origin release/v0.1.0-demo
 
 Abrir el PR `release/v0.1.0-demo → main` con el título `release: v0.1.0-demo`. Incluir versión, SHA, digest y run de CI. El PR debe permanecer abierto durante toda la validación funcional.
 
-Mostrar la ejecución de **CI/CD Pipeline** iniciada por el PR. `Approve and deploy QA` espera la aprobación del Environment `qa`. Después de aprobar, localiza el artefacto creado previamente para el HEAD, verifica su identidad y lo despliega sin reconstruirlo.
+Mostrar la ejecución de **Release to QA** iniciada por el PR. `Approve and deploy QA` espera la aprobación del Environment `qa`. Después de aprobar, localiza el artefacto creado previamente para el HEAD, verifica su identidad y lo despliega sin reconstruirlo.
 
 Abrir `QA acceptance tests` y mostrar los smoke tests de `/health`, `/environment`, `/version` y `/promotion`, además del artefacto de evidencia. Explicar que una falla genera diagnósticos e impide habilitar `QA sign-off`.
 
@@ -55,8 +55,8 @@ Explicar que el PR fija el código correspondiente al digest aunque `develop` ha
 ## Escenario 4 — Producción
 
 1. Fusionar el PR `release/* → main` después de la aprobación funcional.
-2. Mostrar que el evento de merge inicia una ejecución de **CI/CD Pipeline** para PROD.
-3. Abrir `Resolve merged candidate` y comprobar que utiliza el SHA original del PR, no el merge commit.
+2. Mostrar que el evento de merge inicia **Production Deployment**.
+3. Abrir `Resolve merged release` y `Verify QA sign-off`; comprobar que utilizan el SHA original del PR y que la evidencia coincide con el digest promovido.
 4. Mostrar `Approve and deploy PROD` esperando aprobación del Environment `prod`.
 5. Un reviewer distinto aprueba mediante **Review deployments → Approve and deploy**.
 6. Abrir `Production smoke tests` y comprobar que versión, SHA, digest y run coinciden con DEV y QA.
