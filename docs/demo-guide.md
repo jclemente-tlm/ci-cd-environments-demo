@@ -60,6 +60,7 @@ Explicar que el PR fija el código correspondiente al digest aunque `develop` ha
 4. Mostrar `Approve and deploy PROD` esperando aprobación del Environment `prod`.
 5. Un reviewer distinto aprueba mediante **Review deployments → Approve and deploy**.
 6. Abrir `Verify PROD deployment` y comprobar que salud, versión, SHA, digest y run coinciden con DEV y QA.
+7. Mostrar `Production observability` y sus umbrales simulados de disponibilidad, errores y latencia.
 
 La descarga por nombre `candidate-<SHA>`, la validación del manifiesto y la igualdad del digest demuestran que PROD recibe el mismo binario validado, no una recompilación. En una implementación Docker, el equivalente es desplegar `repository@sha256:<digest>`.
 
@@ -70,6 +71,7 @@ La descarga por nombre `candidate-<SHA>`, la validación del manifiesto y la igu
 3. Mostrar que el deployment QA requerido no queda exitoso y, por tanto, el PR no puede fusionarse ni iniciar PROD.
 4. Si es un defecto de código, corregirlo mediante una rama `fix/*` y PR hacia `develop`.
 5. Mostrar que se crea un candidato nuevo, se despliega primero en DEV y repite todo el ciclo.
+6. Mostrar que una falla de deployment o verificación habilita el job `Rollback QA` y genera evidencia separada.
 
 ## Mensajes clave
 

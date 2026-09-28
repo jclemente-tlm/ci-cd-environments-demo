@@ -85,6 +85,7 @@ jobs:
       - run: |
           echo "SIMULATED: Hadolint"
           echo "SIMULATED: Checkov IaC scan"
+          echo "SIMULATED: actionlint workflow validation"
 
   package:
     name: Package
@@ -196,3 +197,19 @@ jobs:
           commit_sha: ${{ needs.publish-artifact.outputs.source_sha }}
           branch: develop
           version: ${{ needs.publish-artifact.outputs.version }}
+
+  rollback-dev:
+    name: Rollback DEV
+    needs: [publish-artifact, deploy-dev, verify-dev-deployment]
+    if: >-
+      always() &&
+      (needs.deploy-dev.result == 'failure' || needs.verify-dev-deployment.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rollback
+        with:
+          environment: dev
+          failed_commit_sha: ${{ needs.publish-artifact.outputs.source_sha }}
+          failed_artifact_digest: ${{ needs.publish-artifact.outputs.artifact_digest }}
+          rollback_token: simulated-rollback-authorization

@@ -1,0 +1,53 @@
+name: Simulate environment rollback
+description: Registra la restauración de la versión estable anterior cuando falla un deployment o su verificación.
+
+inputs:
+  environment:
+    description: Ambiente que debe restaurarse
+    required: true
+  failed_commit_sha:
+    description: Commit del candidato fallido
+    required: true
+  failed_artifact_digest:
+    description: Digest del candidato fallido
+    required: true
+  rollback_token:
+    description: Credencial ficticia del ambiente
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate rollback authorization
+      shell: bash
+      env:
+        TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        ROLLBACK_TOKEN: ${{ inputs.rollback_token }}
+      run: |
+        case "$TARGET_ENVIRONMENT" in
+          dev|qa|prod) ;;
+          *) echo "::error::Ambiente de rollback no permitido: $TARGET_ENVIRONMENT"; exit 1 ;;
+        esac
+        test -n "$ROLLBACK_TOKEN" || { echo "::error::Falta autorización de rollback"; exit 1; }
+    - name: Restore previous stable release
+      shell: bash
+      env:
+        TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        FAILED_SHA: ${{ inputs.failed_commit_sha }}
+        FAILED_DIGEST: ${{ inputs.failed_artifact_digest }}
+      run: |
+        {
+          echo "## Rollback ejecutado — SIMULATED"
+          echo "- Ambiente: $TARGET_ENVIRONMENT"
+          echo "- Commit rechazado: $FAILED_SHA"
+          echo "- Digest rechazado: $FAILED_DIGEST"
+          echo "- Acción: restaurar la última versión estable registrada"
+        } >> "$GITHUB_STEP_SUMMARY"
+        printf 'environment=%s\nfailed_sha=%s\nfailed_digest=%s\nrollback=success\n' \
+          "$TARGET_ENVIRONMENT" "$FAILED_SHA" "$FAILED_DIGEST" > rollback-evidence.txt
+    - name: Publish rollback evidence
+      uses: actions/upload-artifact@v4
+      with:
+        name: rollback-${{ inputs.environment }}-${{ inputs.failed_commit_sha }}-${{ github.run_id }}
+        path: rollback-evidence.txt
+        retention-days: 30

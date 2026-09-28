@@ -40,7 +40,7 @@ curl http://localhost:8080/environment
 
 La automatización actual es deliberadamente mínima: implementa build y pruebas unitarias reales, y simula los gates de calidad, seguridad y escaneo del artefacto. Solo después de que todos esos gates terminan correctamente genera el paquete desplegable, verifica su digest y permite publicarlo. Las verificaciones posteriores al deployment reutilizan ese mismo paquete.
 
-- `ci-cd-pipeline.yml` (`Continuous Integration`) muestra solamente los gates de ramas temporales. `develop-delivery.yml` construye, publica, despliega y valida DEV. `release-to-qa.yml` resuelve el candidato, despliega QA, ejecuta sus pruebas y espera `QA sign-off`. `production-deployment.yml` verifica esa aprobación antes de permitir PROD. Cada ejecución muestra únicamente las etapas que le corresponden.
+- `ci-cd-pipeline.yml` (`Continuous Integration`) muestra solamente los gates de ramas temporales. `develop-delivery.yml` construye, publica, despliega y verifica DEV. `release-to-qa.yml` resuelve el candidato, despliega QA, verifica el deployment, ejecuta acceptance tests y espera `QA sign-off`. `production-deployment.yml` verifica esa aprobación antes de permitir PROD y evalúa observabilidad después del deployment. Los tres ambientes muestran una ruta de rollback cuando falla el deployment o su verificación.
 - `.github/actions/deploy/action.yml`: encapsula la descarga, verificación y simulación de despliegue. `.github/actions/verify-deployment/action.yml` comprueba después identidad, integridad, salud y metadatos en DEV, QA y PROD como jobs visibles e independientes.
 - `.github/actions/resolve-candidate/action.yml`: resuelve automáticamente el run, versión y digest del candidato para evitar entradas técnicas manuales.
 

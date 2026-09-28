@@ -82,6 +82,7 @@ jobs:
     steps:
       - run: |
           echo "SIMULATED: Dockerfile and IaC checks"
+          echo "SIMULATED: actionlint workflow validation"
 
   resolve-candidate:
     name: Resolve DEV candidate
@@ -142,6 +143,25 @@ jobs:
           commit_sha: ${{ needs.resolve-candidate.outputs.source_sha }}
           branch: ${{ github.head_ref }}
           version: ${{ needs.resolve-candidate.outputs.version }}
+
+  rollback-qa:
+    name: Rollback QA
+    needs: [resolve-candidate, deploy-qa, verify-qa-deployment]
+    if: >-
+      always() &&
+      (needs.deploy-qa.result == 'failure' || needs.verify-qa-deployment.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout simulated rollback action without environment secrets
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./.github/actions/rollback
+        with:
+          environment: qa
+          failed_commit_sha: ${{ needs.resolve-candidate.outputs.source_sha }}
+          failed_artifact_digest: ${{ needs.resolve-candidate.outputs.artifact_digest }}
+          rollback_token: simulated-rollback-authorization
 
   qa-acceptance-tests:
     name: QA acceptance tests

@@ -121,3 +121,45 @@ jobs:
           commit_sha: ${{ needs.resolve-release.outputs.source_sha }}
           branch: main
           version: ${{ needs.resolve-release.outputs.version }}
+
+  production-observability:
+    name: Production observability
+    needs: [resolve-release, verify-prod-deployment]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate simulated production signals
+        env:
+          SOURCE_SHA: ${{ needs.resolve-release.outputs.source_sha }}
+          ARTIFACT_DIGEST: ${{ needs.resolve-release.outputs.artifact_digest }}
+        run: |
+          test -n "$SOURCE_SHA"
+          test -n "$ARTIFACT_DIGEST"
+          {
+            echo "## Production observability — SIMULATED"
+            echo "- Availability: healthy"
+            echo "- Error rate: within threshold"
+            echo "- Latency: within threshold"
+            echo "- Logs and alerts: no blocking signals"
+            echo "- Commit: $SOURCE_SHA"
+            echo "- Digest: $ARTIFACT_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  rollback-prod:
+    name: Rollback PROD
+    needs: [resolve-release, deploy-prod, verify-prod-deployment, production-observability]
+    if: >-
+      always() &&
+      (
+        needs.deploy-prod.result == 'failure' ||
+        needs.verify-prod-deployment.result == 'failure' ||
+        needs.production-observability.result == 'failure'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rollback
+        with:
+          environment: prod
+          failed_commit_sha: ${{ needs.resolve-release.outputs.source_sha }}
+          failed_artifact_digest: ${{ needs.resolve-release.outputs.artifact_digest }}
+          rollback_token: simulated-rollback-authorization

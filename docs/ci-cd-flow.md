@@ -10,6 +10,8 @@ En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST
 
 `Publish` existe únicamente en `Develop Delivery`. Los workflows de QA y PROD resuelven después ese candidato y cambian su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
 
+Cada deployment tiene una verificación técnica independiente. Si el deployment o su verificación falla, el grafo habilita un job `Rollback <ambiente>` que registra la restauración simulada de la última versión estable. En PROD, una verificación exitosa habilita además `Production observability`; se evalúan disponibilidad, errores, latencia, logs y alertas antes de considerar finalizada la liberación.
+
 ### Grafo de dependencias acordado
 
 ```text
@@ -100,7 +102,7 @@ GitHub permite esperar hasta 30 días por una aprobación de Environment y limit
 
 ## Política de Pull Requests
 
-El job `Validate` es la puerta de entrada de las validaciones. En un PR comprueba la ruta antes de iniciar build, calidad, seguridad y delivery. Permite `feature/*`, `fix/*`, `refactor/*` y `hotfix/*` hacia `develop`, `release/*` hacia `main`, y `main` hacia `develop` para resincronización. Releases deben contener el estado actual de `main`. En un push, el trigger limita las ramas autorizadas antes de crear la ejecución. Sus pasos conservan nombres específicos para que el resumen muestre qué regla se validó.
+El job `Validate` es la puerta de entrada de las validaciones. En un PR comprueba la ruta antes de iniciar build, calidad, seguridad y delivery. Permite `feature/*`, `fix/*`, `refactor/*` y `hotfix/*` hacia `develop`, `release/*` hacia `main`, y `main` hacia `develop` para resincronización. Releases deben contener el estado actual de `main`. `Delivery checks` representa Hadolint, Checkov y actionlint; las herramientas siguen simuladas, pero sus políticas y ubicación en el flujo son explícitas.
 
 ## Fallas en QA
 

@@ -139,6 +139,8 @@ La palabra *publish* de .NET significa preparar los archivos desplegables; no si
 
 La separación se expresa mediante cuatro workflows visibles: `Continuous Integration`, `Develop Delivery`, `Release to QA` y `Production Deployment`. Esta división evita grafos llenos de jobs omitidos y conserva una dependencia fuerte: el sign-off habilita el merge y su evidencia debe validarse nuevamente antes de PROD. Los deployments y validaciones reutilizan acciones compuestas y conservan run, SHA, versión, rama y digest.
 
+Deployment, verificación y rollback son responsabilidades distintas. La PoC representa el rollback como un job condicional con evidencia propia y sin reutilizar los secrets de deployment; una implementación empresarial lo sustituiría por el mecanismo preautorizado de la plataforma. PROD agrega una evaluación posterior de observabilidad y también activa rollback si esas señales superan los umbrales permitidos.
+
 ### Consecuencias
 
 - Los deployments pueden reintentarse sin recompilar.
