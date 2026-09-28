@@ -133,9 +133,9 @@ Por ello, `develop` no se conserva solamente por convención de Gitflow: represe
 
 ### Decisión
 
-CI restaura dependencias, compila y prueba en toda rama temporal. Build se ejecuta en paralelo con seguridad de código y validaciones de Dockerfile/IaC; calidad espera las pruebas y su cobertura. El empaquetado no se ejecuta en ramas temporales: comienza únicamente con el push de integración en `develop` y después de que todos los gates terminan correctamente. Luego se analiza el entregable final y solo un escaneo exitoso permite almacenar el artefacto inmutable. CD selecciona, descarga, configura, despliega y verifica ese artefacto sin recompilarlo ni volver a empaquetarlo.
+CI restaura dependencias, compila y prueba en toda rama temporal. Build se ejecuta en paralelo con seguridad de código y validaciones de Dockerfile/IaC; calidad espera las pruebas y su cobertura. `Release` no se ejecuta en ramas temporales: comienza únicamente con el push de integración en `develop` y después de que todos los gates terminan correctamente. Allí se prepara y analiza el entregable final; solo una política de release exitosa permite a `Publish` almacenar el artefacto inmutable. CD selecciona, descarga, configura, despliega y verifica ese artefacto sin recompilarlo ni volver a empaquetarlo.
 
-La palabra *publish* de .NET significa preparar los archivos desplegables; no significa publicarlos en un registro ni desplegarlos a un ambiente. En el grafo, las etapas se denominan de forma concisa **Package**, **Artifact scan** y **Publish**; sus steps describen la operación técnica completa. El formato puede ser una imagen, ZIP, paquete o conjunto de binarios; cada formato selecciona sus controles posteriores al empaquetado.
+La palabra *publish* de .NET significa preparar los archivos desplegables; no significa publicarlos en un registro ni desplegarlos a un ambiente. En el grafo, las etapas se denominan de forma concisa **Release** y **Publish**. `Release` agrupa preparación, versión, checksum, metadatos, SBOM y controles sobre el entregable; `Publish` almacena el candidato inmutable y expone su referencia y digest. El formato puede ser una imagen, ZIP, paquete o conjunto de binarios; cada formato selecciona sus controles internos de release.
 
 La separación se expresa mediante cuatro workflows visibles: `Continuous Integration`, `Develop Delivery`, `Release to QA` y `Production Deployment`. Esta división evita grafos llenos de jobs omitidos y conserva una dependencia fuerte: el sign-off habilita el merge y su evidencia debe validarse nuevamente antes de PROD. Los deployments y validaciones reutilizan acciones compuestas y conservan run, SHA, versión, rama y digest.
 
@@ -145,7 +145,7 @@ Deployment, verificación y rollback son responsabilidades distintas. La PoC rep
 
 - Los deployments pueden reintentarse sin recompilar.
 - Un fallo de calidad, seguridad o delivery impide incluso generar el paquete desplegable.
-- Un fallo al analizar el paquete impide publicarlo.
+- Un fallo en cualquier control de release impide publicarlo.
 - DEV, QA y PROD reciben el mismo binario.
 - PROD solo acepta un SHA con evidencia QA exitosa y no expirada.
 - Los permisos de deployment pueden evolucionar independientemente de CI.

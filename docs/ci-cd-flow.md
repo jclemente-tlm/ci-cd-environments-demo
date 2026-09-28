@@ -16,24 +16,23 @@ Cada deployment tiene una verificación técnica independiente. Si el deployment
 
 ```text
 Validate
-├── Build and unit tests ──> Code quality ───────────────┐
-├── Security checks ─────────────────────────────────────┤
-└── Delivery checks (Dockerfile/IaC) ────────────────────┘
-                                                          ↓
+├── Build ──> Tests ──> Code quality scan ───────────────┐
+├── Security scan ────────────────────────────────────────┤
+└── Delivery checks (Dockerfile/IaC/workflows) ──────────┘
+                                                           ↓
                                     Fin si es una rama temporal
-                                                          │
+                                                           │
                                     Continuar solo en push de develop
-                                                          ↓
-                                                       Package
-                                                          ↓
-                                                    Artifact scan
-                                                          ↓
-                                                       Publish
-                                                          ↓
+                                                           ↓
+                                                        Release
+                              (preparar, versionar, SBOM, verificar y escanear)
+                                                           ↓
+                                                        Publish
+                                                           ↓
                                             DEV ──> QA ──> PROD
 ```
 
-Build y los controles de seguridad pueden ejecutarse en paralelo. Quality depende de tests porque consume cobertura. En ramas temporales el flujo termina al completar esos gates. En el push de `develop`, Package espera todos los gates: la política elegida es **no generar el entregable si falla calidad o seguridad**, no solamente impedir su publicación. El escaneo dependiente del formato ocurre después de Package: Trivy Image para contenedores; SCA, antivirus, SBOM o firma para ZIP y otros binarios. La PoC simula esa selección con `format=dotnet-publish`.
+Build y los controles de seguridad pueden ejecutarse en paralelo. `Code quality scan` depende de `Tests` porque consume cobertura. En ramas temporales el flujo termina al completar esos gates. En el push de `develop`, `Release` espera todos los gates: la política elegida es **no generar el entregable si falla calidad o seguridad**, no solamente impedir su publicación. Dentro de `Release` se prepara y versiona el entregable, se generan checksum, metadatos y SBOM, y se ejecutan verificación de integridad, análisis de vulnerabilidades, malware y política de release. Solo entonces `Publish` almacena el candidato inmutable con su digest.
 
 Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí se conserva el check requerido. Por ello, un merge compuesto exclusivamente por documentación no crea artefacto ni deployment, aunque actualice `develop` o `main`. `GITHUB_TOKEN` usa solo `contents: read` en CI.
 
@@ -80,7 +79,7 @@ sequenceDiagram
     Registry->>Prod: Desplegar exactamente X
 ```
 
-Las ramas temporales ejecutan solamente `Continuous Integration`. Después del merge, `Develop Delivery` empaqueta, escanea, publica el candidato y valida DEV. `Release to QA` resuelve ese artefacto por el SHA del PR, despliega QA, ejecuta pruebas de aceptación y publica evidencia después del gate manual. Ninguna promoción reconstruye el candidato.
+Las ramas temporales ejecutan solamente `Continuous Integration`. Después del merge, `Develop Delivery` crea el release, publica el candidato y valida DEV. `Release to QA` resuelve ese artefacto por el SHA del PR, despliega QA, ejecuta pruebas de aceptación y publica evidencia después del gate manual. Ninguna promoción reconstruye el candidato.
 
 No se utiliza `workflow_run`. La acción `resolve-candidate` busca un artefacto no expirado llamado `candidate-<SHA>`, descarga sus metadatos y expone automáticamente run, versión y digest. El digest de la PoC representa el digest Docker que una implementación real resolvería desde ECR.
 

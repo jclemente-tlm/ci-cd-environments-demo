@@ -39,8 +39,8 @@ jobs:
             esac
           fi
 
-  build-test:
-    name: Build and unit tests
+  build:
+    name: Build
     needs: validate
     runs-on: ubuntu-latest
     steps:
@@ -54,8 +54,33 @@ jobs:
         run: dotnet restore
       - name: Build
         run: dotnet build --configuration Release --no-restore
+      - name: Preserve compiled output
+        run: tar -cf compiled-output.tar src/Cicd.Demo.Api/bin/Release src/Cicd.Demo.Api/obj tests/Cicd.Demo.Api.Tests/bin/Release tests/Cicd.Demo.Api.Tests/obj
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compiled-output-${{ github.run_id }}
+          path: compiled-output.tar
+          retention-days: 1
+
+  tests:
+    name: Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: compiled-output-${{ github.run_id }}
+          path: .
+      - name: Restore compiled output
+        run: tar -xf compiled-output.tar
       - name: Test
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory TestResults
+      - name: Integration tests
+        run: echo "SIMULATED - integration test suite"
       - name: Generate simulated coverage report
         run: |
           mkdir -p reports/coverage
@@ -74,31 +99,41 @@ jobs:
           path: reports/coverage/coverage.opencover.xml
 
   code-quality:
-    name: Code quality
-    needs: build-test
+    name: Code quality scan
+    needs: tests
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: coverage-${{ github.run_id }}
           path: reports/coverage
-      - name: Simulate SonarQube Quality Gate
+      - name: Code linting
+        run: echo "SIMULATED - dotnet format and linting rules"
+      - name: SonarQube analysis
         run: |
           test -s reports/coverage/coverage.opencover.xml
           grep -q 'simulated="true"' reports/coverage/coverage.opencover.xml
-          echo "## Code quality — SIMULATED" >> "$GITHUB_STEP_SUMMARY"
+          echo "SIMULATED: SonarQube analysis"
+      - name: Coverage analysis
+        run: echo "SIMULATED - coverage threshold satisfied"
+      - name: Quality gate
+        run: echo "SIMULATED - quality gate passed"
 
   security-checks:
-    name: Security checks
+    name: Security scan
     needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Simulate security gates
-        run: |
-          echo "SIMULATED: Semgrep SAST"
-          echo "SIMULATED: Gitleaks secret scanning"
-          echo "SIMULATED: OWASP Dependency Check"
+      - name: SAST scan
+        run: echo "SIMULATED - Semgrep SAST"
+      - name: Secret scan
+        run: echo "SIMULATED - Gitleaks secret scanning"
+      - name: Dependency scan
+        run: echo "SIMULATED - OWASP Dependency Check"
+      - name: Vulnerability policy
+        run: echo "SIMULATED - no blocking vulnerabilities"
 
   delivery-checks:
     name: Delivery checks
@@ -106,8 +141,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Simulate delivery gates
-        run: |
-          echo "SIMULATED: Hadolint"
-          echo "SIMULATED: Checkov IaC scan"
-          echo "SIMULATED: actionlint workflow validation"
+      - name: Dockerfile lint
+        run: echo "SIMULATED - Hadolint"
+      - name: IaC scan
+        run: echo "SIMULATED - Checkov"
+      - name: Workflow validation
+        run: echo "SIMULATED - actionlint"

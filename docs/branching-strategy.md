@@ -110,7 +110,7 @@ Crear rulesets manuales para `main` y `develop`:
 
 - bloquear push directo y force-push;
 - requerir pull request y al menos una aprobación;
-- exigir los checks de rama temporal `Validate`, `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`, además de la resolución de conversaciones;
+- exigir los checks de rama temporal `Validate`, `Build`, `Tests`, `Code quality scan`, `Security scan` y `Delivery checks`, además de la resolución de conversaciones;
 - exigir rama actualizada antes del merge cuando el ritmo del equipo lo permita;
 - restringir borrado y limitar excepciones a administradores designados.
 

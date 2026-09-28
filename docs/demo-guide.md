@@ -19,9 +19,9 @@ git switch -c feature/demo-change
 git push -u origin feature/demo-change
 ```
 
-Primero, mostrar que el push ejecuta `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`. La rama temporal termina después de esos gates: no empaqueta, no publica un candidato promovible y no despliega en ningún ambiente.
+Primero, mostrar que el push ejecuta `Build`, `Tests`, `Code quality scan`, `Security scan` y `Delivery checks`. La rama temporal termina después de esos gates: no crea un release, no publica un candidato promovible y no despliega en ningún ambiente.
 
-Abrir PR `feature/demo-change → develop`, mostrar `Continuous Integration` y hacer merge. En Actions, abrir **Develop Delivery** y mostrar las validaciones, la creación del candidato, `Deploy DEV` y `Verify DEV deployment`. El Summary debe indicar Environment, SHA, versión, digest y run de origen.
+Abrir PR `feature/demo-change → develop`, mostrar `Continuous Integration` y hacer merge. En Actions, abrir **Develop Delivery** y mostrar los gates, `Release`, `Publish`, `Deploy DEV` y `Verify DEV deployment`. El Summary debe indicar Environment, SHA, versión, digest y run de origen.
 
 ## Escenario 2 — Promoción del mismo candidato a QA
 

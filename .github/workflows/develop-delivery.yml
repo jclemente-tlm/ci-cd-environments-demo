@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-test:
-    name: Build and unit tests
+  build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,8 +29,33 @@ jobs:
         name: Restore
       - run: dotnet build --configuration Release --no-restore
         name: Build
-      - run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory TestResults
-        name: Test
+      - name: Bundle compiled output
+        run: tar -cf compiled-output.tar src/Cicd.Demo.Api/bin/Release src/Cicd.Demo.Api/obj tests/Cicd.Demo.Api.Tests/bin/Release tests/Cicd.Demo.Api.Tests/obj
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compiled-output-${{ github.run_id }}
+          path: compiled-output.tar
+          retention-days: 1
+
+  tests:
+    name: Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: compiled-output-${{ github.run_id }}
+          path: .
+      - name: Restore compiled output
+        run: tar -xf compiled-output.tar
+      - name: Unit tests
+        run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory TestResults
+      - name: Integration tests
+        run: echo "SIMULATED - integration test suite"
       - name: Generate simulated coverage
         run: |
           mkdir -p reports/coverage
@@ -45,51 +70,58 @@ jobs:
         with:
           name: coverage-${{ github.run_id }}
           path: reports/coverage/coverage.opencover.xml
-      - name: Bundle compiled output
-        run: tar -cf compiled-output.tar src/Cicd.Demo.Api/bin/Release src/Cicd.Demo.Api/obj
-      - uses: actions/upload-artifact@v4
-        with:
-          name: compiled-output-${{ github.run_id }}
-          path: compiled-output.tar
-          retention-days: 1
 
   code-quality:
-    name: Code quality
-    needs: build-test
+    name: Code quality scan
+    needs: tests
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: coverage-${{ github.run_id }}
           path: reports/coverage
-      - run: |
+      - name: Code linting
+        run: echo "SIMULATED - dotnet format and linting rules"
+      - name: SonarQube analysis
+        run: |
           test -s reports/coverage/coverage.opencover.xml
           grep -q 'simulated="true"' reports/coverage/coverage.opencover.xml
-          echo "## Code quality — SIMULATED" >> "$GITHUB_STEP_SUMMARY"
+          echo "SIMULATED: SonarQube analysis"
+      - name: Coverage analysis
+        run: echo "SIMULATED - coverage threshold satisfied"
+      - name: Quality gate
+        run: echo "SIMULATED - quality gate passed"
 
   security-checks:
-    name: Security checks
+    name: Security scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          echo "SIMULATED: Semgrep SAST"
-          echo "SIMULATED: Gitleaks secret scanning"
-          echo "SIMULATED: OWASP Dependency Check"
+      - name: SAST scan
+        run: echo "SIMULATED - Semgrep SAST"
+      - name: Secret scan
+        run: echo "SIMULATED - Gitleaks secret scanning"
+      - name: Dependency scan
+        run: echo "SIMULATED - OWASP Dependency Check"
+      - name: Vulnerability policy
+        run: echo "SIMULATED - no blocking vulnerabilities"
 
   delivery-checks:
     name: Delivery checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          echo "SIMULATED: Hadolint"
-          echo "SIMULATED: Checkov IaC scan"
-          echo "SIMULATED: actionlint workflow validation"
+      - name: Dockerfile lint
+        run: echo "SIMULATED - Hadolint"
+      - name: IaC scan
+        run: echo "SIMULATED - Checkov"
+      - name: Workflow validation
+        run: echo "SIMULATED - actionlint"
 
-  package:
-    name: Package
-    needs: [build-test, code-quality, security-checks, delivery-checks]
+  release:
+    name: Release
+    needs: [build, tests, code-quality, security-checks, delivery-checks]
     runs-on: ubuntu-latest
     outputs:
       artifact_digest: ${{ steps.identity.outputs.digest }}
@@ -106,62 +138,64 @@ jobs:
           path: .
       - run: tar -xf compiled-output.tar
         name: Restore compiled output
-      - name: Package without rebuilding
-        run: dotnet publish src/Cicd.Demo.Api/Cicd.Demo.Api.csproj --configuration Release --no-build --no-restore --output artifacts/app /p:UseAppHost=false
-      - name: Create immutable identity
+      - name: Prepare deployable without rebuilding
+        run: dotnet publish src/Cicd.Demo.Api/Cicd.Demo.Api.csproj --configuration Release --no-build --no-restore --output release/app /p:UseAppHost=false
+      - name: Assign version, checksum and metadata
         id: identity
         run: |
-          (cd artifacts/app && find . -type f -print0 | sort -z | xargs -0 sha256sum) > artifacts/checksums.sha256
-          DIGEST="sha256:$(sha256sum artifacts/checksums.sha256 | cut -d' ' -f1)"
+          (cd release/app && find . -type f -print0 | sort -z | xargs -0 sha256sum) > release/checksums.sha256
+          DIGEST="sha256:$(sha256sum release/checksums.sha256 | cut -d' ' -f1)"
           VERSION="0.1.0-${GITHUB_RUN_ID}"
           ARTIFACT_NAME="candidate-${GITHUB_SHA}"
-          printf 'source_sha=%s\nsource_branch=%s\nsource_run=%s\nversion=%s\ndigest=%s\nformat=%s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$VERSION" "$DIGEST" "dotnet-publish" > artifacts/candidate.env
+          printf 'source_sha=%s\nsource_branch=%s\nsource_run=%s\nversion=%s\ndigest=%s\nformat=%s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$VERSION" "$DIGEST" "dotnet-publish" > release/candidate.env
           printf 'digest=%s\nversion=%s\nname=%s\n' "$DIGEST" "$VERSION" "$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+      - name: Generate SBOM
+        run: |
+          printf '{"spdxVersion":"SPDX-2.3","name":"cicd-demo-api","documentNamespace":"https://example.invalid/sbom/%s","creationInfo":{"comment":"SIMULATED SBOM"}}\n' "$GITHUB_SHA" > release/sbom.spdx.json
+      - name: Verify integrity
+        env:
+          EXPECTED_DIGEST: ${{ steps.identity.outputs.digest }}
+        run: |
+          ACTUAL_DIGEST="sha256:$(sha256sum release/checksums.sha256 | cut -d' ' -f1)"
+          test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
+          (cd release/app && sha256sum --check ../checksums.sha256)
+      - name: Binary vulnerability scan
+        run: echo "SIMULATED - binary vulnerability scan"
+      - name: Dependency vulnerability scan
+        run: echo "SIMULATED - release dependency vulnerability scan"
+      - name: Malware scan
+        run: echo "SIMULATED - malware scan"
+      - name: Validate SBOM
+        run: grep -q 'SPDX-2.3' release/sbom.spdx.json
+      - name: Release policy
+        run: echo "SIMULATED - release policy passed"
       - uses: actions/upload-artifact@v4
         with:
-          name: packaged-output-${{ github.run_id }}
-          path: artifacts
+          name: validated-release-${{ github.run_id }}
+          path: release
           retention-days: 1
-
-  artifact-scan:
-    name: Artifact scan
-    needs: package
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: packaged-output-${{ github.run_id }}
-          path: artifacts
-      - name: Verify and scan artifact
-        env:
-          EXPECTED_DIGEST: ${{ needs.package.outputs.artifact_digest }}
-        run: |
-          ACTUAL_DIGEST="sha256:$(sha256sum artifacts/checksums.sha256 | cut -d' ' -f1)"
-          test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
-          (cd artifacts/app && sha256sum --check ../checksums.sha256)
-          echo "SIMULATED: SCA, antivirus and SBOM"
 
   publish-artifact:
     name: Publish
-    needs: [package, artifact-scan]
+    needs: release
     runs-on: ubuntu-latest
     outputs:
       artifact_run_id: ${{ github.run_id }}
-      artifact_name: ${{ needs.package.outputs.artifact_name }}
-      artifact_digest: ${{ needs.package.outputs.artifact_digest }}
-      version: ${{ needs.package.outputs.version }}
+      artifact_name: ${{ needs.release.outputs.artifact_name }}
+      artifact_digest: ${{ needs.release.outputs.artifact_digest }}
+      version: ${{ needs.release.outputs.version }}
       source_sha: ${{ github.sha }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: packaged-output-${{ github.run_id }}
-          path: artifacts
-      - run: grep -Fxq "digest=${{ needs.package.outputs.artifact_digest }}" artifacts/candidate.env
+          name: validated-release-${{ github.run_id }}
+          path: release
+      - run: grep -Fxq "digest=${{ needs.release.outputs.artifact_digest }}" release/candidate.env
         name: Verify publication metadata
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ needs.package.outputs.artifact_name }}
-          path: artifacts
+          name: ${{ needs.release.outputs.artifact_name }}
+          path: release
           retention-days: 30
 
   deploy-dev:
