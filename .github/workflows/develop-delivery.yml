@@ -29,8 +29,17 @@ jobs:
         name: Restore
       - run: dotnet build --configuration Release --no-restore
         name: Build
-      - name: Bundle compiled output
+      - name: Create deployable artifact
+        run: |
+          dotnet publish src/Cicd.Demo.Api/Cicd.Demo.Api.csproj --configuration Release --no-build --no-restore --output build/app /p:UseAppHost=false
+          (cd build/app && find . -type f -print0 | sort -z | xargs -0 sha256sum) > build/checksums.sha256
+      - name: Preserve test binaries
         run: tar -cf compiled-output.tar src/Cicd.Demo.Api/bin/Release src/Cicd.Demo.Api/obj tests/Cicd.Demo.Api.Tests/bin/Release tests/Cicd.Demo.Api.Tests/obj
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deployable-${{ github.run_id }}
+          path: build
+          retention-days: 1
       - uses: actions/upload-artifact@v4
         with:
           name: compiled-output-${{ github.run_id }}
@@ -48,6 +57,10 @@ jobs:
           dotnet-version: 10.0.x
       - uses: actions/download-artifact@v4
         with:
+          name: deployable-${{ github.run_id }}
+          path: build
+      - uses: actions/download-artifact@v4
+        with:
           name: compiled-output-${{ github.run_id }}
           path: .
       - name: Restore compiled output
@@ -55,7 +68,10 @@ jobs:
       - name: Unit tests
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory TestResults
       - name: Integration tests
-        run: echo "SIMULATED - integration test suite"
+        run: |
+          test -f build/app/Cicd.Demo.Api.dll
+          (cd build/app && sha256sum --check ../checksums.sha256)
+          echo "SIMULATED - integration test suite against the deployable artifact"
       - name: Generate simulated coverage
         run: |
           mkdir -p reports/coverage
@@ -127,23 +143,16 @@ jobs:
       artifact_digest: ${{ steps.identity.outputs.digest }}
       artifact_name: ${{ steps.identity.outputs.name }}
       version: ${{ steps.identity.outputs.version }}
+      artifact_run_id: ${{ github.run_id }}
+      source_sha: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
       - uses: actions/download-artifact@v4
         with:
-          name: compiled-output-${{ github.run_id }}
-          path: .
-      - run: tar -xf compiled-output.tar
-        name: Restore compiled output
-      - name: Prepare deployable without rebuilding
-        run: dotnet publish src/Cicd.Demo.Api/Cicd.Demo.Api.csproj --configuration Release --no-build --no-restore --output release/app /p:UseAppHost=false
-      - name: Assign version, checksum and metadata
+          name: deployable-${{ github.run_id }}
+          path: release
+      - name: Assign official version and metadata
         id: identity
         run: |
-          (cd release/app && find . -type f -print0 | sort -z | xargs -0 sha256sum) > release/checksums.sha256
           DIGEST="sha256:$(sha256sum release/checksums.sha256 | cut -d' ' -f1)"
           VERSION="0.1.0-${GITHUB_RUN_ID}"
           ARTIFACT_NAME="candidate-${GITHUB_SHA}"
@@ -169,38 +178,16 @@ jobs:
         run: grep -q 'SPDX-2.3' release/sbom.spdx.json
       - name: Release policy
         run: echo "SIMULATED - release policy passed"
-      - uses: actions/upload-artifact@v4
+      - name: Publish immutable candidate
+        uses: actions/upload-artifact@v4
         with:
-          name: validated-release-${{ github.run_id }}
-          path: release
-          retention-days: 1
-
-  publish-artifact:
-    name: Publish
-    needs: release
-    runs-on: ubuntu-latest
-    outputs:
-      artifact_run_id: ${{ github.run_id }}
-      artifact_name: ${{ needs.release.outputs.artifact_name }}
-      artifact_digest: ${{ needs.release.outputs.artifact_digest }}
-      version: ${{ needs.release.outputs.version }}
-      source_sha: ${{ github.sha }}
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: validated-release-${{ github.run_id }}
-          path: release
-      - run: grep -Fxq "digest=${{ needs.release.outputs.artifact_digest }}" release/candidate.env
-        name: Verify publication metadata
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ needs.release.outputs.artifact_name }}
+          name: ${{ steps.identity.outputs.name }}
           path: release
           retention-days: 30
 
   deploy-dev:
     name: Deploy DEV
-    needs: publish-artifact
+    needs: release
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -208,33 +195,33 @@ jobs:
       - uses: ./.github/actions/deploy
         with:
           environment: dev
-          artifact_run_id: ${{ needs.publish-artifact.outputs.artifact_run_id }}
-          artifact_name: ${{ needs.publish-artifact.outputs.artifact_name }}
-          artifact_digest: ${{ needs.publish-artifact.outputs.artifact_digest }}
-          commit_sha: ${{ needs.publish-artifact.outputs.source_sha }}
+          artifact_run_id: ${{ needs.release.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.release.outputs.artifact_name }}
+          artifact_digest: ${{ needs.release.outputs.artifact_digest }}
+          commit_sha: ${{ needs.release.outputs.source_sha }}
           branch: develop
-          version: ${{ needs.publish-artifact.outputs.version }}
+          version: ${{ needs.release.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
 
   verify-dev-deployment:
     name: Verify DEV deployment
-    needs: [publish-artifact, deploy-dev]
+    needs: [release, deploy-dev]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/verify-deployment
         with:
           environment: dev
-          artifact_run_id: ${{ needs.publish-artifact.outputs.artifact_run_id }}
-          artifact_name: ${{ needs.publish-artifact.outputs.artifact_name }}
-          artifact_digest: ${{ needs.publish-artifact.outputs.artifact_digest }}
-          commit_sha: ${{ needs.publish-artifact.outputs.source_sha }}
+          artifact_run_id: ${{ needs.release.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.release.outputs.artifact_name }}
+          artifact_digest: ${{ needs.release.outputs.artifact_digest }}
+          commit_sha: ${{ needs.release.outputs.source_sha }}
           branch: develop
-          version: ${{ needs.publish-artifact.outputs.version }}
+          version: ${{ needs.release.outputs.version }}
 
   rollback-dev:
     name: Rollback DEV
-    needs: [publish-artifact, deploy-dev, verify-dev-deployment]
+    needs: [release, deploy-dev, verify-dev-deployment]
     if: >-
       always() &&
       (needs.deploy-dev.result == 'failure' || needs.verify-dev-deployment.result == 'failure')
@@ -244,6 +231,6 @@ jobs:
       - uses: ./.github/actions/rollback
         with:
           environment: dev
-          failed_commit_sha: ${{ needs.publish-artifact.outputs.source_sha }}
-          failed_artifact_digest: ${{ needs.publish-artifact.outputs.artifact_digest }}
+          failed_commit_sha: ${{ needs.release.outputs.source_sha }}
+          failed_artifact_digest: ${{ needs.release.outputs.artifact_digest }}
           rollback_token: simulated-rollback-authorization

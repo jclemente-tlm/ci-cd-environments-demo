@@ -4,11 +4,11 @@ Este documento describe la automatización de la PoC. La matriz empresarial de c
 
 ## CI
 
-CI se ejecuta en cada push a `feature/*`, `fix/*` y `hotfix/*` para dar feedback inmediato, y vuelve a ejecutarse en los PR hacia `develop` o `main`. Las ramas temporales y sus PR terminan después de build, pruebas, calidad, seguridad y delivery: no generan un paquete desplegable, no publican un candidato y no despliegan. Un push integrado a `develop` repite esos gates, empaqueta y analiza el entregable, publica `candidate-<commit SHA>` con retención de 30 días y despliega DEV.
+CI se ejecuta en cada push a `feature/*`, `fix/*` y `hotfix/*` para dar feedback inmediato, y vuelve a ejecutarse en los PR hacia `develop`. `Build` crea el entregable que consume `Tests`; en ramas temporales es efímero y nunca se publica como candidato ni se despliega. Un push integrado a `develop` repite esos gates y `Release` versiona, analiza y publica exactamente el entregable creado por `Build` como `candidate-<commit SHA>` con retención de 30 días antes de desplegar DEV.
 
 En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST, SonarQube para análisis de calidad, SCA, secret scanning, container scanning e IaC scanning. Los merges repiten los controles sobre el commit integrado, pero solamente `develop` construye el candidato promovible. La PoC todavía no implementa esas herramientas y no debe interpretarse que ya estén operativas.
 
-`Publish` existe únicamente en `Develop Delivery`. Los workflows de QA y PROD resuelven después ese candidato y cambian su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
+La publicación es el último step de `Release` y existe únicamente en `Develop Delivery`. Los workflows de QA y PROD resuelven después ese candidato y cambian su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
 
 Cada deployment tiene una verificación técnica independiente. Si el deployment o su verificación falla, el grafo habilita un job `Rollback <ambiente>` que registra la restauración simulada de la última versión estable. En PROD, una verificación exitosa habilita además `Production observability`; se evalúan disponibilidad, errores, latencia, logs y alertas antes de considerar finalizada la liberación.
 
@@ -25,14 +25,12 @@ Validate
                                     Continuar solo en push de develop
                                                            ↓
                                                         Release
-                              (preparar, versionar, SBOM, verificar y escanear)
-                                                           ↓
-                                                        Publish
+                           (versionar, SBOM, verificar, escanear y publicar)
                                                            ↓
                                             DEV ──> QA ──> PROD
 ```
 
-Build y los controles de seguridad pueden ejecutarse en paralelo. `Code quality scan` depende de `Tests` porque consume cobertura. En ramas temporales el flujo termina al completar esos gates. En el push de `develop`, `Release` espera todos los gates: la política elegida es **no generar el entregable si falla calidad o seguridad**, no solamente impedir su publicación. Dentro de `Release` se prepara y versiona el entregable, se generan checksum, metadatos y SBOM, y se ejecutan verificación de integridad, análisis de vulnerabilidades, malware y política de release. Solo entonces `Publish` almacena el candidato inmutable con su digest.
+`Build` compila y crea el entregable una sola vez; `Tests` ejecuta pruebas unitarias y valida ese mismo contenido. Los controles de seguridad pueden avanzar en paralelo y `Code quality scan` depende de `Tests` porque consume cobertura. En ramas temporales el flujo termina al completar esos gates y el entregable efímero expira. En el push de `develop`, `Release` espera todos los gates, asigna versión y metadatos, genera el SBOM, ejecuta verificación de integridad, análisis de vulnerabilidades, malware y política de release, y finalmente publica el candidato inmutable con su digest. `Release` no recompila ni modifica `app/`.
 
 Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí se conserva el check requerido. Por ello, un merge compuesto exclusivamente por documentación no crea artefacto ni deployment, aunque actualice `develop` o `main`. `GITHUB_TOKEN` usa solo `contents: read` en CI.
 

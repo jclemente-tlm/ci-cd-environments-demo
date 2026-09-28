@@ -6,7 +6,7 @@ Este documento define el flujo objetivo empresarial para validación, construcci
 
 > Los Pull Requests validan cambios; `develop` produce el candidato integrado y los workflows de release promueven esa misma identidad sin reconstruirla.
 
-La PoC implementa actualmente build, pruebas unitarias, empaquetado, almacenamiento del artefacto y smoke tests de QA. SAST, SCA, secret scanning, container scanning e IaC scanning están representados mediante simulaciones explícitas y deberán sustituirse por las herramientas aprobadas por la organización.
+La PoC implementa actualmente build, creación del entregable, pruebas unitarias, almacenamiento del artefacto y verificación del deployment en QA. SAST, SCA, secret scanning, container scanning e IaC scanning están representados mediante simulaciones explícitas y deberán sustituirse por las herramientas aprobadas por la organización.
 
 ## Etapas y dependencias
 
@@ -14,20 +14,16 @@ El modelo es independiente del formato del entregable:
 
 ```text
 Validación
-├── Build → Pruebas → Calidad ────────────────┐
+├── Build (crea entregable) → Pruebas → Calidad ┐
 ├── Seguridad de código y dependencias ───────┤
 └── Validación Dockerfile/IaC ────────────────┘
                                                ↓
-                                         Empaquetado
-                                               ↓
-                                    Escaneo del artefacto
-                                               ↓
-                                          Publicación
+                     Release (versión, controles y publicación)
                                                ↓
                                       DEV → QA → PROD
 ```
 
-La política acordada exige que empaquetado espere todos los gates. Para una imagen, empaquetado significa `docker build` y el control posterior es Trivy Image. Para una Lambda .NET o aplicación tradicional puede significar `dotnet publish` más ZIP, seguido de SCA, antivirus, SBOM, firma u otros controles aplicables. Publicación almacena el contenido una sola vez; promover agrega o mueve referencias, pero no vuelve a construir ni empaquetar.
+`Build` crea el contenido desplegable una sola vez. Para una imagen significa `docker build`; para una Lambda .NET o aplicación tradicional puede significar `dotnet publish` más ZIP. Pruebas y controles validan ese mismo contenido. `Release` le asigna una versión, ejecuta Trivy Image, SCA, antivirus, SBOM, firma u otros controles aplicables y finalmente lo almacena. Promover agrega o mueve referencias, pero no vuelve a construir ni empaquetar.
 
 ## Flujo objetivo
 
@@ -38,7 +34,7 @@ feature/* o fix/*
         ↓
 PR hacia develop
 └── CI — validación del cambio
-    ├── build de la solución
+    ├── build de la solución y entregable efímero
     ├── pruebas unitarias y cobertura
     ├── SAST de seguridad (Semgrep)
     ├── análisis de calidad (SonarQube)
@@ -52,7 +48,7 @@ PR hacia develop
         ↓ merge
 develop
 ├── CI — validación integrada y artefacto DEV
-│   ├── build de la solución
+│   ├── build de la solución y entregable desplegable
 │   ├── pruebas unitarias y cobertura
 │   ├── SAST de seguridad (Semgrep)
 │   ├── análisis de calidad (SonarQube)
@@ -60,7 +56,6 @@ develop
 │   ├── secret scanning (Gitleaks)
 │   ├── lint del Dockerfile (Hadolint)
 │   ├── IaC scanning (Checkov), cuando exista IaC
-│   ├── construir imagen/artefacto inmutable
 │   ├── análisis de imagen de contenedor (Trivy Image)
 │   ├── publicar reportes y resúmenes
 │   └── publicar imagen/artefacto de desarrollo
@@ -91,18 +86,18 @@ CD — PROD
 
 | Control | PR a `develop` | Merge en `develop` | PR `release/* → main` | Merge en `main` |
 |---|:---:|:---:|:---:|:---:|
-| Build | Sí | Sí | Sí | Sí |
-| Pruebas unitarias | Sí | Sí | Sí | Sí |
-| Cobertura de código | Objetivo | Objetivo | Objetivo | Objetivo |
-| SAST de seguridad (Semgrep) | Sí | Sí | Sí | Sí |
-| Análisis de calidad (SonarQube) | Sí | Sí | Sí | Sí |
-| SCA/dependencias | Sí | Sí | Sí | Sí |
-| Secret scanning | Sí | Sí | Sí | Sí |
-| Lint del Dockerfile | Sí | Sí | Sí | Sí |
-| IaC scanning, cuando exista IaC | Sí | Sí | Sí | Sí |
-| Construir artefacto desplegable | Efímero para scan | Sí, candidato promovible | Efímero para revalidar código; el candidato se resuelve por SHA | No |
-| Análisis de imagen de contenedor (Trivy) | Sí | Sí | Sí | Sí |
-| Reportes y resúmenes | Sí | Sí | Sí | Sí |
+| Build | Sí | Sí | No; resuelve candidato | No |
+| Pruebas unitarias | Sí | Sí | No; ya superadas | No |
+| Cobertura de código | Objetivo | Objetivo | Evidencia existente | Evidencia existente |
+| SAST de seguridad (Semgrep) | Sí | Sí | Evidencia existente | Evidencia existente |
+| Análisis de calidad (SonarQube) | Sí | Sí | Evidencia existente | Evidencia existente |
+| SCA/dependencias | Sí | Sí | Evidencia existente | Evidencia existente |
+| Secret scanning | Sí | Sí | Evidencia existente | Evidencia existente |
+| Lint del Dockerfile | Sí | Sí | Evidencia existente | Evidencia existente |
+| IaC scanning, cuando exista IaC | Sí | Sí | Evidencia existente | Evidencia existente |
+| Construir artefacto desplegable | Sí, efímero | Sí, candidato promovible | No; resuelve por SHA/digest | No |
+| Análisis de imagen de contenedor (Trivy) | Sí | Sí | Evidencia existente | Evidencia existente |
+| Reportes y resúmenes | Sí | Sí | Sí, promoción QA | Sí, promoción PROD |
 | Validación semántica del PR | Sí | No aplica | Sí | No aplica |
 | Publicar artefacto/imagen | No | Sí, candidato inmutable | No | No |
 | Deployment | No | DEV | QA | PROD después de aprobación |

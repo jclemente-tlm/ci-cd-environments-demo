@@ -54,8 +54,17 @@ jobs:
         run: dotnet restore
       - name: Build
         run: dotnet build --configuration Release --no-restore
-      - name: Preserve compiled output
+      - name: Create deployable artifact
+        run: |
+          dotnet publish src/Cicd.Demo.Api/Cicd.Demo.Api.csproj --configuration Release --no-build --no-restore --output build/app /p:UseAppHost=false
+          (cd build/app && find . -type f -print0 | sort -z | xargs -0 sha256sum) > build/checksums.sha256
+      - name: Preserve test binaries
         run: tar -cf compiled-output.tar src/Cicd.Demo.Api/bin/Release src/Cicd.Demo.Api/obj tests/Cicd.Demo.Api.Tests/bin/Release tests/Cicd.Demo.Api.Tests/obj
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deployable-${{ github.run_id }}
+          path: build
+          retention-days: 1
       - uses: actions/upload-artifact@v4
         with:
           name: compiled-output-${{ github.run_id }}
@@ -73,6 +82,10 @@ jobs:
           dotnet-version: 10.0.x
       - uses: actions/download-artifact@v4
         with:
+          name: deployable-${{ github.run_id }}
+          path: build
+      - uses: actions/download-artifact@v4
+        with:
           name: compiled-output-${{ github.run_id }}
           path: .
       - name: Restore compiled output
@@ -80,7 +93,10 @@ jobs:
       - name: Test
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory TestResults
       - name: Integration tests
-        run: echo "SIMULATED - integration test suite"
+        run: |
+          test -f build/app/Cicd.Demo.Api.dll
+          (cd build/app && sha256sum --check ../checksums.sha256)
+          echo "SIMULATED - integration test suite against the deployable artifact"
       - name: Generate simulated coverage report
         run: |
           mkdir -p reports/coverage

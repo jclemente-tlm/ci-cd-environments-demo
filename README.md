@@ -38,7 +38,7 @@ curl http://localhost:8080/environment
 
 ## Automatización
 
-La automatización actual es deliberadamente mínima: implementa build y pruebas unitarias reales, y simula los gates de calidad, seguridad y release. Solo después de que todos esos gates terminan correctamente prepara el entregable, verifica su integridad y permite publicarlo. Las verificaciones posteriores al deployment reutilizan ese mismo candidato.
+La automatización actual es deliberadamente mínima: `Build` compila y crea una vez el entregable, las pruebas unitarias son reales y los gates de calidad, seguridad y release son simulados. Solo después de que el mismo entregable supera esos gates, `Release` le asigna versión, verifica su integridad y lo publica. Las verificaciones posteriores al deployment reutilizan ese mismo candidato.
 
 - `ci-cd-pipeline.yml` (`Continuous Integration`) muestra solamente los gates de ramas temporales. `develop-delivery.yml` construye, publica, despliega y verifica DEV. `release-to-qa.yml` resuelve el candidato, despliega QA, verifica el deployment, ejecuta acceptance tests y espera `QA sign-off`. `production-deployment.yml` verifica esa aprobación antes de permitir PROD y evalúa observabilidad después del deployment. Los tres ambientes muestran una ruta de rollback cuando falla el deployment o su verificación.
 - `.github/actions/deploy/action.yml`: encapsula la descarga, verificación y simulación de despliegue. `.github/actions/verify-deployment/action.yml` comprueba después identidad, integridad, salud y metadatos en DEV, QA y PROD como jobs visibles e independientes.
@@ -54,7 +54,7 @@ Después del deployment y las pruebas de QA, el job `QA sign-off` permanece visi
 
 Crear los Environments `dev`, `qa`, `qa-signoff` y `prod`. Definir el secret ficticio `DEMO_DEPLOY_TOKEN` solamente en los tres destinos de deployment. Configurar required reviewers en `qa`, `qa-signoff` y `prod`; `qa-signoff` es un gate lógico sin secrets. Ningún valor secreto se registra o se incluye en el artefacto.
 
-Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks de CI `Validate`, `Build`, `Tests`, `Code quality scan`, `Security scan` y `Delivery checks`. `Release` se ejecuta después del merge en `develop`, no sobre ramas temporales, e integra los controles del entregable antes de `Publish`. En `main`, exigir además `QA acceptance tests` y `QA sign-off`. Los detalles y comandos de demo están en:
+Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks de CI `Validate`, `Build`, `Tests`, `Code quality scan`, `Security scan` y `Delivery checks`. En ramas temporales, `Build` crea un entregable efímero para CI pero no lo publica. Después del merge en `develop`, `Release` versiona, controla y publica el entregable construido por ese mismo run. En `main`, exigir además `QA acceptance tests` y `QA sign-off`. Los detalles y comandos de demo están en:
 
 - [Estrategia de ramas](docs/branching-strategy.md)
 - [Decisiones de arquitectura](docs/architecture-decisions.md)
