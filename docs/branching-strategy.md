@@ -80,7 +80,7 @@ Mientras el PR release permanece abierto, `develop` puede continuar recibiendo c
 
 `develop` integra funcionalidades y correcciones normales. Todo merge que modifica la aplicación ejecuta CI y, si resulta exitoso, despliega automáticamente a DEV. Un cambio exclusivo de documentación no crea artefacto ni deployment. `develop` no representa una versión productiva.
 
-`main` registra código estable que completó el proceso de liberación. Todo merge ejecuta CI para verificar el estado registrado, pero no construye otra imagen ni inicia deployments. El estado real de producción lo identifica el historial del Environment `prod` y su digest.
+`main` registra código estable que completó el proceso de liberación. El merge no construye otra imagen ni paquete: resuelve el candidato aprobado, solicita autorización del Environment `prod` e inicia el deployment del mismo digest. El estado real de producción lo identifica el historial del Environment `prod` y su digest.
 
 ## Ramas temporales
 
@@ -110,7 +110,7 @@ Crear rulesets manuales para `main` y `develop`:
 
 - bloquear push directo y force-push;
 - requerir pull request y al menos una aprobación;
-- exigir los checks `Build and test` y `Validate branch route`, además de la resolución de conversaciones;
+- exigir los checks `Validate`, `Build and unit tests`, `Code quality`, `Security checks`, `Delivery checks` y `Scan packaged artifact`, además de la resolución de conversaciones;
 - exigir rama actualizada antes del merge cuando el ritmo del equipo lo permita;
 - restringir borrado y limitar excepciones a administradores designados.
 

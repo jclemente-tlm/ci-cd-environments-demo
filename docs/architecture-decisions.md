@@ -133,15 +133,17 @@ Por ello, `develop` no se conserva solamente por convención de Gitflow: represe
 
 ### Decisión
 
-CI restaura dependencias, compila, prueba, empaqueta mediante `dotnet publish` y almacena un artefacto inmutable. CD selecciona, descarga, configura, despliega y verifica ese artefacto sin recompilarlo.
+CI restaura dependencias, compila y prueba. Build se ejecuta en paralelo con seguridad de código y validaciones de Dockerfile/IaC; calidad espera las pruebas y su cobertura. El empaquetado solo comienza cuando todos esos gates han terminado correctamente. Después se analiza el entregable final y únicamente un escaneo exitoso permite almacenar el artefacto inmutable. CD selecciona, descarga, configura, despliega y verifica ese artefacto sin recompilarlo ni volver a empaquetarlo.
 
-La palabra *publish* de .NET significa preparar los archivos desplegables; no significa desplegar a un ambiente. Para evitar ambigüedad, los pasos se denominan **Package deployable application** y **Upload immutable build artifact**.
+La palabra *publish* de .NET significa preparar los archivos desplegables; no significa publicarlos en un registro ni desplegarlos a un ambiente. Para evitar ambigüedad, las etapas se denominan **Package deployable artifact**, **Scan packaged artifact** y **Publish immutable artifact**. El formato puede ser una imagen, ZIP, paquete o conjunto de binarios; cada formato selecciona sus controles posteriores al empaquetado.
 
 La separación se expresa mediante jobs condicionales de un único **CI/CD Pipeline**: el evento de `develop` produce el candidato, el PR release ejecuta QA y su merge ejecuta PROD. La espera funcional vive en el PR y se registra como revisión requerida. Los deployments reutilizan acciones compuestas y conservan automáticamente run, SHA, versión, rama y digest.
 
 ### Consecuencias
 
 - Los deployments pueden reintentarse sin recompilar.
+- Un fallo de calidad, seguridad o delivery impide incluso generar el paquete desplegable.
+- Un fallo al analizar el paquete impide publicarlo.
 - DEV, QA y PROD reciben el mismo binario.
 - PROD solo acepta un SHA con evidencia QA exitosa y no expirada.
 - Los permisos de deployment pueden evolucionar independientemente de CI.

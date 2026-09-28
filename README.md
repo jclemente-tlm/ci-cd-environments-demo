@@ -38,9 +38,9 @@ curl http://localhost:8080/environment
 
 ## Automatización
 
-La automatización actual es deliberadamente mínima: implementa build, pruebas unitarias, empaquetado, promoción y smoke tests de QA. Los controles empresariales adicionales descritos en la documentación, incluidos cobertura y escaneos de seguridad, representan el estado objetivo y todavía no se ejecutan.
+La automatización actual es deliberadamente mínima: implementa build y pruebas unitarias reales, y simula los gates de calidad, seguridad y escaneo del artefacto. Solo después de que todos esos gates terminan correctamente genera el paquete desplegable, verifica su digest y permite publicarlo. La promoción y los smoke tests de QA reutilizan ese mismo paquete.
 
-- `ci-cd-pipeline.yml` (`CI/CD Pipeline`) es el único workflow visible. Sus jobs condicionales crean y despliegan el candidato en DEV, promueven el mismo digest a QA desde el PR release y lo despliegan en PROD después del merge, sin reconstruir.
+- `ci-cd-pipeline.yml` (`CI/CD Pipeline`) es el único workflow visible. Build/Tests, Security checks y Delivery checks comienzan después de validar la ruta; Code quality consume los resultados de pruebas. Package espera todos los gates, Artifact scan analiza el entregable ya generado y Publish almacena el candidato inmutable. DEV, QA y PROD reciben después ese mismo digest sin reconstruir.
 - `.github/actions/deploy/action.yml`: encapsula la descarga, simulación, trazabilidad y smoke tests compartidos sin aparecer como otro workflow en Actions.
 - `.github/actions/resolve-candidate/action.yml`: resuelve automáticamente el run, versión y digest del candidato para evitar entradas técnicas manuales.
 
@@ -54,7 +54,7 @@ El workflow de QA termina después del deployment y los smoke tests. El PR perma
 
 Crear manualmente los Environments `dev`, `qa` y `prod`. En los tres definir el secret ficticio `DEMO_DEPLOY_TOKEN`. Configurar required reviewers en `qa` y `prod`; QA funcional se registra como revisión requerida del PR, no mediante un Environment adicional. Ningún valor secreto se registra o se incluye en el artefacto.
 
-Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks `Build and test` y `Validate branch route` exitosos. En `main`, exigir además el deployment QA y la revisión funcional. Los detalles y comandos de demo están en:
+Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks `Validate`, `Build and unit tests`, `Code quality`, `Security checks`, `Delivery checks` y `Scan packaged artifact`. En `main`, exigir además el deployment QA y la revisión funcional. Los detalles y comandos de demo están en:
 
 - [Estrategia de ramas](docs/branching-strategy.md)
 - [Decisiones de arquitectura](docs/architecture-decisions.md)

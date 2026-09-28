@@ -6,7 +6,28 @@ Este documento define el flujo objetivo empresarial para validación, construcci
 
 > Los Pull Requests validan cambios; `develop` produce el candidato integrado y los workflows de release promueven esa misma identidad sin reconstruirla.
 
-La PoC implementa actualmente build, pruebas unitarias, empaquetado, almacenamiento del artefacto y smoke tests de QA. SAST, SCA, secret scanning, container scanning e IaC scanning forman parte del flujo objetivo y deben incorporarse con las herramientas aprobadas por la organización.
+La PoC implementa actualmente build, pruebas unitarias, empaquetado, almacenamiento del artefacto y smoke tests de QA. SAST, SCA, secret scanning, container scanning e IaC scanning están representados mediante simulaciones explícitas y deberán sustituirse por las herramientas aprobadas por la organización.
+
+## Etapas y dependencias
+
+El modelo es independiente del formato del entregable:
+
+```text
+Validación
+├── Build → Pruebas → Calidad ────────────────┐
+├── Seguridad de código y dependencias ───────┤
+└── Validación Dockerfile/IaC ────────────────┘
+                                               ↓
+                                         Empaquetado
+                                               ↓
+                                    Escaneo del artefacto
+                                               ↓
+                                          Publicación
+                                               ↓
+                                      DEV → QA → PROD
+```
+
+La política acordada exige que empaquetado espere todos los gates. Para una imagen, empaquetado significa `docker build` y el control posterior es Trivy Image. Para una Lambda .NET o aplicación tradicional puede significar `dotnet publish` más ZIP, seguido de SCA, antivirus, SBOM, firma u otros controles aplicables. Publicación almacena el contenido una sola vez; promover agrega o mueve referencias, pero no vuelve a construir ni empaquetar.
 
 ## Flujo objetivo
 
@@ -79,7 +100,7 @@ CD — PROD
 | Secret scanning | Sí | Sí | Sí | Sí |
 | Lint del Dockerfile | Sí | Sí | Sí | Sí |
 | IaC scanning, cuando exista IaC | Sí | Sí | Sí | Sí |
-| Construir artefacto desplegable | No | Sí | No | No |
+| Construir artefacto desplegable | Efímero para scan | Sí, candidato promovible | Efímero para revalidar código; el candidato se resuelve por SHA | No |
 | Análisis de imagen de contenedor (Trivy) | Sí | Sí | Sí | Sí |
 | Reportes y resúmenes | Sí | Sí | Sí | Sí |
 | Validación semántica del PR | Sí | No aplica | Sí | No aplica |
@@ -220,7 +241,7 @@ Si QA rechaza un candidato, este no obtiene sign-off y no puede llegar a PROD. U
 | Build y unit tests | Implementado; 3 pruebas unitarias | Ampliar la suite y las políticas |
 | Medición de cobertura | Reporte OpenCover simulado, sin métrica real | Integrar Coverlet y definir umbral |
 | Artefacto .NET inmutable | Implementado con GitHub Artifacts | Registro empresarial |
-| Imagen Docker | Build local implementado | Publicación en GHCR/ECR/Artifactory/Nexus |
+| Imagen Docker | Dockerfile y build local disponibles; el pipeline usa actualmente `dotnet publish` | Build, Trivy Image y publicación en GHCR/ECR/Artifactory/Nexus |
 | Smoke tests QA | Implementado | Ejecutarlos contra infraestructura real |
 | Semgrep/SCA/secrets/IaC/container scanning | Jobs simulados y marcados como `SIMULATED` | Instalar herramientas y seleccionar reglas, severidades y quality gates |
 | QA funcional manual | Revisión requerida documentada; se configura en protección de `main` | Integrar herramienta corporativa de pruebas o check dedicado si aplica |
