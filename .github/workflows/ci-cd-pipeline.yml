@@ -61,7 +61,7 @@ jobs:
           HEAD_BRANCH: ${{ github.head_ref }}
         run: |
           case "$BASE_BRANCH:$HEAD_BRANCH" in
-            develop:feature/*|develop:fix/*|develop:refactor/*|develop:sync/*|develop:main|main:develop|main:release/*|main:hotfix/*)
+            develop:feature/*|develop:fix/*|develop:refactor/*|develop:sync/*|develop:hotfix/*|develop:main|main:develop|main:release/*)
               ;;
             *)
               echo "Ruta de PR no permitida: $HEAD_BRANCH -> $BASE_BRANCH" >&2
@@ -72,25 +72,18 @@ jobs:
           if [[ "$BASE_BRANCH:$HEAD_BRANCH" == "main:develop" ]]; then
             git fetch --no-tags origin main
             if git cat-file -e origin/main:.github/actions/resolve-candidate/action.yml 2>/dev/null; then
-              echo "La instalación inicial ya terminó; use release/* o hotfix/* para integrar en main." >&2
+              echo "La instalación inicial ya terminó; use release/* para integrar en main." >&2
               exit 1
             fi
             echo "Bootstrap permitido: main todavía no contiene las acciones confiables de promoción."
           fi
 
-          if [[ "$HEAD_BRANCH" == release/* || "$HEAD_BRANCH" == hotfix/* ]]; then
+          if [[ "$HEAD_BRANCH" == release/* ]]; then
             git fetch --no-tags origin main
             git merge-base --is-ancestor origin/main HEAD || {
               echo "$HEAD_BRANCH debe incluir el estado actual de main." >&2
               exit 1
             }
-          fi
-
-          if [[ "$HEAD_BRANCH" == hotfix/* ]]; then
-            if git rev-list --merges origin/main..HEAD | grep -q .; then
-              echo "$HEAD_BRANCH no debe contener merges de otra línea de desarrollo." >&2
-              exit 1
-            fi
           fi
 
           echo "Ruta de PR permitida: $HEAD_BRANCH -> $BASE_BRANCH"
@@ -147,15 +140,23 @@ jobs:
 
   promote-artifact:
     name: Promote published artifact
-    needs: [validate, artifact-scan]
+    needs: [validate, build-test, code-quality, security-checks, delivery-checks]
     if: >-
       always() &&
       (
-        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
         (
-          needs.artifact-scan.result == 'success' &&
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          needs.validate.result == 'success'
+        ) ||
+        (
           github.event_name == 'pull_request' &&
-          (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
+          startsWith(github.head_ref, 'release/') &&
+          needs.validate.result == 'success' &&
+          needs.build-test.result == 'success' &&
+          needs.code-quality.result == 'success' &&
+          needs.security-checks.result == 'success' &&
+          needs.delivery-checks.result == 'success'
         )
       )
     runs-on: ubuntu-latest
@@ -205,7 +206,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           RELEASE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
-            --jq 'map(select(.merged_at != null and .base.ref == "main" and ((.head.ref | startswith("release/")) or (.head.ref | startswith("hotfix/"))))) | first | [.head.sha, .head.ref] | @tsv')
+            --jq 'map(select(.merged_at != null and .base.ref == "main" and (.head.ref | startswith("release/")))) | first | [.head.sha, .head.ref] | @tsv')
           test -n "$RELEASE"
           IFS=$'\t' read -r SOURCE_SHA _ <<< "$RELEASE"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
@@ -312,6 +313,8 @@ jobs:
     name: Package deployable artifact
     needs: [build-test, code-quality, security-checks, delivery-checks]
     if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/develop' &&
       needs.build-test.result == 'success' &&
       needs.code-quality.result == 'success' &&
       needs.security-checks.result == 'success' &&
@@ -410,7 +413,7 @@ jobs:
     needs: [package, artifact-scan]
     if: >-
       github.event_name == 'push' &&
-      (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
+      github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     outputs:
       artifact_run_id: ${{ steps.publication.outputs.artifact_run_id }}
@@ -460,7 +463,7 @@ jobs:
     needs: publish-artifact
     if: >-
       github.event_name == 'push' &&
-      (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/hotfix/'))
+      github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     environment: dev
     concurrency:
@@ -479,12 +482,31 @@ jobs:
           version: ${{ needs.publish-artifact.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
 
+  validate-dev:
+    name: Validate DEV
+    needs: [publish-artifact, deploy-dev]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/smoke-test
+        with:
+          environment: dev
+          artifact_run_id: ${{ needs.publish-artifact.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.publish-artifact.outputs.artifact_name }}
+          artifact_digest: ${{ needs.publish-artifact.outputs.artifact_digest }}
+          commit_sha: ${{ needs.publish-artifact.outputs.source_sha }}
+          branch: develop
+          version: ${{ needs.publish-artifact.outputs.version }}
+
   deploy-qa:
-    name: Deploy QA
+    name: Approve and deploy QA
     needs: promote-artifact
     if: >-
       github.event_name == 'pull_request' &&
-      (startsWith(github.head_ref, 'release/') || startsWith(github.head_ref, 'hotfix/'))
+      startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     environment: qa
     concurrency:
@@ -505,7 +527,6 @@ jobs:
           branch: ${{ github.head_ref }}
           version: ${{ needs.promote-artifact.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
-          validate_qa: 'true'
       - name: Record candidate under functional validation
         env:
           RELEASE_BRANCH: ${{ github.head_ref }}
@@ -522,8 +543,59 @@ jobs:
             echo "| Ejecución de CI | ${{ needs.promote-artifact.outputs.artifact_run_id }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  qa-acceptance-tests:
+    name: QA acceptance tests
+    needs: [promote-artifact, deploy-qa]
+    if: >-
+      github.event_name == 'pull_request' &&
+      startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted validation actions
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: ./.github/actions/smoke-test
+        with:
+          environment: qa
+          artifact_run_id: ${{ needs.promote-artifact.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.promote-artifact.outputs.artifact_name }}
+          artifact_digest: ${{ needs.promote-artifact.outputs.artifact_digest }}
+          commit_sha: ${{ needs.promote-artifact.outputs.source_sha }}
+          branch: ${{ github.head_ref }}
+          version: ${{ needs.promote-artifact.outputs.version }}
+
+  qa-signoff:
+    name: QA sign-off
+    needs: [promote-artifact, qa-acceptance-tests]
+    if: >-
+      github.event_name == 'pull_request' &&
+      startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    environment: qa-signoff
+    concurrency:
+      group: qa-signoff-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Record functional acceptance
+        env:
+          ARTIFACT_DIGEST: ${{ needs.promote-artifact.outputs.artifact_digest }}
+          ARTIFACT_VERSION: ${{ needs.promote-artifact.outputs.version }}
+          SOURCE_SHA: ${{ needs.promote-artifact.outputs.source_sha }}
+        run: |
+          {
+            echo "## QA sign-off aprobado"
+            echo "| Campo | Valor |"
+            echo "|---|---|"
+            echo "| Pull request | #${{ github.event.pull_request.number }} |"
+            echo "| Commit aceptado | $SOURCE_SHA |"
+            echo "| Versión | $ARTIFACT_VERSION |"
+            echo "| Digest aceptado | $ARTIFACT_DIGEST |"
+            echo "| Evidencia previa | QA acceptance tests exitosos |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy-prod:
-    name: Deploy PROD
+    name: Approve and deploy PROD
     needs: promote-artifact
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -544,3 +616,20 @@ jobs:
           branch: main
           version: ${{ needs.promote-artifact.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
+
+  production-smoke-tests:
+    name: Production smoke tests
+    needs: [promote-artifact, deploy-prod]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/smoke-test
+        with:
+          environment: prod
+          artifact_run_id: ${{ needs.promote-artifact.outputs.artifact_run_id }}
+          artifact_name: ${{ needs.promote-artifact.outputs.artifact_name }}
+          artifact_digest: ${{ needs.promote-artifact.outputs.artifact_digest }}
+          commit_sha: ${{ needs.promote-artifact.outputs.source_sha }}
+          branch: main
+          version: ${{ needs.promote-artifact.outputs.version }}

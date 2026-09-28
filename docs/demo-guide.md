@@ -19,7 +19,7 @@ git switch -c feature/demo-change
 git push -u origin feature/demo-change
 ```
 
-Primero, mostrar que el push ejecuta `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`. Después de superar esos gates crea un paquete efímero y ejecuta `Scan packaged artifact`, pero no publica un candidato promovible ni despliega en ningún ambiente. Esto proporciona feedback sobre el entregable final antes del PR.
+Primero, mostrar que el push ejecuta `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`. La rama temporal termina después de esos gates: no empaqueta, no publica un candidato promovible y no despliega en ningún ambiente.
 
 Abrir PR `feature/demo-change → develop`, mostrar nuevamente las validaciones junto con `Validate`, y hacer merge. En Actions, abrir la ejecución **CI/CD Pipeline** del push integrado a `develop` y mostrar las validaciones, la creación del candidato y `Deploy DEV`. El Summary debe indicar Environment, SHA, versión, digest y run de origen. La página de `dev` conserva el deployment.
 
@@ -36,15 +36,15 @@ git push -u origin release/v0.1.0-demo
 
 Abrir el PR `release/v0.1.0-demo → main` con el título `release: v0.1.0-demo`. Incluir versión, SHA, digest y run de CI. El PR debe permanecer abierto durante toda la validación funcional.
 
-Mostrar la ejecución de **CI/CD Pipeline** iniciada por el PR. `Deploy QA` espera la aprobación del Environment `qa`. Después de aprobar, el mismo job localiza el artefacto creado previamente para el HEAD, verifica su identidad y lo despliega sin reconstruirlo.
+Mostrar la ejecución de **CI/CD Pipeline** iniciada por el PR. `Approve and deploy QA` espera la aprobación del Environment `qa`. Después de aprobar, localiza el artefacto creado previamente para el HEAD, verifica su identidad y lo despliega sin reconstruirlo.
 
-Abrir el job de QA y mostrar los smoke tests de `/health`, `/environment` y `/version`, además del artefacto `qa-smoke-evidence-<SHA>-<CI_RUN_ID>`. Explicar que una falla genera diagnósticos, pero no evidencia técnica exitosa.
+Abrir `QA acceptance tests` y mostrar los smoke tests de `/health`, `/environment`, `/version` y `/promotion`, además del artefacto de evidencia. Explicar que una falla genera diagnósticos e impide habilitar `QA sign-off`.
 
-Abrir el Summary de `Deploy QA` y comparar su digest con DEV: debe ser idéntico. El mismo job ejecuta los smoke tests y registra que el candidato quedó listo para validación funcional. El PR permanece abierto mientras QA prueba durante varios días; no queda ningún job esperando. Los pushes posteriores a `develop` actualizan DEV, pero nunca QA.
+Abrir el Summary de QA y comparar su digest con DEV: debe ser idéntico. Después de las pruebas, `QA sign-off` queda esperando aprobación manual. Los pushes posteriores a `develop` actualizan DEV, pero nunca QA.
 
 ## Escenario 3 — QA sign-off y merge en `main`
 
-Cuando QA termina, registra una revisión **Approve** sobre el PR. La protección de `main` debe exigir esta revisión funcional, el deployment QA y los checks exitosos para el HEAD actual.
+Cuando QA termina, abre el job `QA sign-off` y selecciona **Review deployments → Approve and deploy**. El job registra PR, SHA, versión y digest aceptados. La protección de `main` debe exigir este gate y los checks exitosos para el HEAD actual.
 
 Explicar que `release/*` es inmutable. Si alguien agrega un commit, GitHub descarta la aprobación y **Resolve candidate** falla porque ese SHA no tiene un artefacto validado desde DEV. La corrección debe entrar a `develop`, generar otro candidato y abrir un release nuevo. Sin cambios adicionales, la aprobación de QA habilita el merge.
 
@@ -57,9 +57,9 @@ Explicar que el PR fija el código correspondiente al digest aunque `develop` ha
 1. Fusionar el PR `release/* → main` después de la aprobación funcional.
 2. Mostrar que el evento de merge inicia una ejecución de **CI/CD Pipeline** para PROD.
 3. Abrir `Resolve merged candidate` y comprobar que utiliza el SHA original del PR, no el merge commit.
-4. Mostrar `Deploy PROD` esperando aprobación del Environment `prod`.
+4. Mostrar `Approve and deploy PROD` esperando aprobación del Environment `prod`.
 5. Un reviewer distinto aprueba mediante **Review deployments → Approve and deploy**.
-6. Abrir el Summary y comprobar que versión, SHA, digest y run coinciden con DEV y QA.
+6. Abrir `Production smoke tests` y comprobar que versión, SHA, digest y run coinciden con DEV y QA.
 
 La descarga por nombre `candidate-<SHA>`, la validación del manifiesto y la igualdad del digest demuestran que PROD recibe el mismo binario validado, no una recompilación. En una implementación Docker, el equivalente es desplegar `repository@sha256:<digest>`.
 
@@ -78,4 +78,4 @@ La descarga por nombre `candidate-<SHA>`, la validación del manifiesto y la igu
 - El artefacto es inmutable y cada deployment queda asociado a run, commit, digest y actor.
 - El PR `release/* → main` se fusiona después del sign-off QA y antes de aprobar PROD.
 - La misma definición sirve para los tres ambientes, mientras variables, secrets y protección permanecen aislados.
-- Un hotfix tiene vía corta a `main`, pero siempre regresa a `develop`.
+- Un hotfix recibe validación CI como rama temporal, se integra primero en `develop` para producir el candidato y sigue el mismo proceso de release hacia `main`.

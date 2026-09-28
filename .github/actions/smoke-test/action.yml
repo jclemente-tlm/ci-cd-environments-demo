@@ -1,0 +1,121 @@
+name: Validate simulated deployment
+description: Descarga el candidato desplegado y ejecuta smoke tests contra sus metadatos sin reconstruirlo.
+
+inputs:
+  environment:
+    description: Ambiente que debe reportar la aplicación
+    required: true
+  artifact_run_id:
+    description: Ejecución que contiene el artefacto inmutable
+    required: true
+  artifact_name:
+    description: Nombre del artefacto candidato
+    required: true
+  artifact_digest:
+    description: Digest esperado del candidato
+    required: true
+  commit_sha:
+    description: Commit representado por el artefacto
+    required: true
+  branch:
+    description: Rama registrada para el deployment
+    required: true
+  version:
+    description: Versión esperada
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download deployed artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact_name }}
+        path: smoke-artifact
+        github-token: ${{ github.token }}
+        run-id: ${{ inputs.artifact_run_id }}
+    - name: Verify deployed candidate
+      shell: bash
+      env:
+        EXPECTED_DIGEST: ${{ inputs.artifact_digest }}
+        EXPECTED_SHA: ${{ inputs.commit_sha }}
+        EXPECTED_VERSION: ${{ inputs.version }}
+      run: |
+        test -f smoke-artifact/candidate.env
+        test -f smoke-artifact/checksums.sha256
+        ACTUAL_DIGEST="sha256:$(sha256sum smoke-artifact/checksums.sha256 | cut -d' ' -f1)"
+        test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
+        grep -Fxq "digest=$EXPECTED_DIGEST" smoke-artifact/candidate.env
+        grep -Fxq "source_sha=$EXPECTED_SHA" smoke-artifact/candidate.env
+        grep -Fxq "version=$EXPECTED_VERSION" smoke-artifact/candidate.env
+        (cd smoke-artifact/app && sha256sum --check ../checksums.sha256)
+    - name: Run smoke tests
+      shell: bash
+      env:
+        APP_ENVIRONMENT: ${{ inputs.environment }}
+        APP_VERSION: ${{ inputs.version }}
+        APP_COMMIT_SHA: ${{ inputs.commit_sha }}
+        APP_BRANCH: ${{ inputs.branch }}
+        APP_DEPLOYED_AT: ${{ github.run_id }}
+      run: |
+        case "$APP_ENVIRONMENT" in
+          dev|qa|prod) ;;
+          *) echo "::error::Ambiente de validación no permitido: $APP_ENVIRONMENT"; exit 1 ;;
+        esac
+
+        ASPNETCORE_URLS=http://127.0.0.1:5088 dotnet smoke-artifact/app/Cicd.Demo.Api.dll > smoke-api.log 2>&1 &
+        API_PID=$!
+        trap 'kill "$API_PID" 2>/dev/null || true' EXIT
+
+        READY=false
+        for attempt in {1..15}; do
+          if curl --fail --silent http://127.0.0.1:5088/health > health.json; then
+            READY=true
+            break
+          fi
+          sleep 1
+        done
+        test "$READY" = "true"
+        test "$(jq -r '.status' health.json)" = "healthy"
+
+        curl --fail --silent http://127.0.0.1:5088/environment > environment.json
+        test "$(jq -r '.environment' environment.json)" = "$APP_ENVIRONMENT"
+
+        curl --fail --silent http://127.0.0.1:5088/version > version.json
+        test "$(jq -r '.version' version.json)" = "$APP_VERSION"
+        test "$(jq -r '.commit' version.json)" = "$APP_COMMIT_SHA"
+        test "$(jq -r '.branch' version.json)" = "$APP_BRANCH"
+
+        curl --fail --silent http://127.0.0.1:5088/promotion > promotion.json
+        test "$(jq -r '.strategy' promotion.json)" = "build-once-promote-by-digest"
+        test "$(jq -r '.version' promotion.json)" = "$APP_VERSION"
+        test "$(jq -r '.commit' promotion.json)" = "$APP_COMMIT_SHA"
+
+        printf '%s\n' \
+          "environment=$APP_ENVIRONMENT" \
+          "commit=$APP_COMMIT_SHA" \
+          "version=$APP_VERSION" \
+          "branch=$APP_BRANCH" \
+          "digest=${{ inputs.artifact_digest }}" \
+          "ci_run=${{ inputs.artifact_run_id }}" > smoke-evidence.txt
+    - name: Record successful smoke evidence
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.environment }}-smoke-evidence-${{ inputs.commit_sha }}-${{ github.run_id }}
+        path: smoke-evidence.txt
+        if-no-files-found: error
+        retention-days: 30
+        overwrite: true
+    - name: Upload smoke diagnostics on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.environment }}-diagnostics-${{ inputs.commit_sha }}-${{ github.run_id }}
+        path: |
+          smoke-api.log
+          health.json
+          environment.json
+          version.json
+          promotion.json
+        if-no-files-found: warn
+        retention-days: 14

@@ -1,5 +1,5 @@
 name: Simulated environment deployment
-description: Descarga un artefacto inmutable, simula su despliegue y opcionalmente valida QA.
+description: Descarga un artefacto inmutable, verifica su identidad y simula su despliegue.
 
 inputs:
   environment:
@@ -26,10 +26,6 @@ inputs:
   deploy_token:
     description: Credencial de demostración para el despliegue
     required: true
-  validate_qa:
-    description: Ejecutar pruebas de humo en QA
-    required: false
-    default: 'false'
 
 runs:
   using: composite
@@ -95,69 +91,3 @@ runs:
           echo "| Desplegado en | $DEPLOYED_AT |"
           echo "| Ejecución de origen | ${{ inputs.artifact_run_id }} |"
         } >> "$GITHUB_STEP_SUMMARY"
-    - name: Validate QA deployment
-      if: inputs.validate_qa == 'true'
-      shell: bash
-      env:
-        APP_ENVIRONMENT: ${{ inputs.environment }}
-        APP_VERSION: ${{ inputs.version }}
-        APP_COMMIT_SHA: ${{ inputs.commit_sha }}
-        APP_BRANCH: ${{ inputs.branch }}
-        APP_DEPLOYED_AT: ${{ github.run_id }}
-      run: |
-        test "$APP_ENVIRONMENT" = "qa"
-        ASPNETCORE_URLS=http://127.0.0.1:5088 dotnet artifact/app/Cicd.Demo.Api.dll > qa-api.log 2>&1 &
-        API_PID=$!
-        trap 'kill "$API_PID" 2>/dev/null || true' EXIT
-
-        READY=false
-        for attempt in {1..15}; do
-          if curl --fail --silent http://127.0.0.1:5088/health > health.json; then
-            READY=true
-            break
-          fi
-          sleep 1
-        done
-        test "$READY" = "true"
-        test "$(jq -r '.status' health.json)" = "healthy"
-
-        curl --fail --silent http://127.0.0.1:5088/environment > environment.json
-        test "$(jq -r '.environment' environment.json)" = "qa"
-
-        curl --fail --silent http://127.0.0.1:5088/version > version.json
-        test "$(jq -r '.version' version.json)" = "$APP_VERSION"
-        test "$(jq -r '.commit' version.json)" = "$APP_COMMIT_SHA"
-        test "$(jq -r '.branch' version.json)" = "$APP_BRANCH"
-
-        curl --fail --silent http://127.0.0.1:5088/promotion > promotion.json
-        test "$(jq -r '.strategy' promotion.json)" = "build-once-promote-by-digest"
-        test "$(jq -r '.version' promotion.json)" = "$APP_VERSION"
-        test "$(jq -r '.commit' promotion.json)" = "$APP_COMMIT_SHA"
-
-        printf '%s\n' \
-          "commit=$APP_COMMIT_SHA" \
-          "version=$APP_VERSION" \
-          "branch=$APP_BRANCH" \
-          "digest=${{ inputs.artifact_digest }}" \
-          "ci_run=${{ inputs.artifact_run_id }}" > qa-smoke-evidence.txt
-    - name: Record successful QA evidence
-      if: inputs.validate_qa == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: qa-smoke-evidence-${{ inputs.commit_sha }}-${{ inputs.artifact_run_id }}
-        path: qa-smoke-evidence.txt
-        if-no-files-found: error
-        retention-days: 30
-        overwrite: true
-    - name: Upload QA diagnostics on failure
-      if: failure() && inputs.validate_qa == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: qa-diagnostics-${{ inputs.commit_sha }}-${{ github.run_id }}
-        path: |
-          qa-api.log
-          health.json
-          environment.json
-          version.json
-        if-no-files-found: warn
-        retention-days: 14
