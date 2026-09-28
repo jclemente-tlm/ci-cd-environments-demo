@@ -8,7 +8,7 @@ CI se ejecuta en cada push a `feature/*`, `fix/*` y `hotfix/*` para dar feedback
 
 En el flujo objetivo, PR, `develop` y `main` ejecutan también Semgrep para SAST, SonarQube para análisis de calidad, SCA, secret scanning, container scanning e IaC scanning. Los merges repiten los controles sobre el commit integrado, pero solamente `develop` construye el candidato promovible. La PoC todavía no implementa esas herramientas y no debe interpretarse que ya estén operativas.
 
-`Publish immutable artifact` existe únicamente en `Develop Delivery`. Los workflows de QA y PROD resuelven después ese candidato y cambian su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
+`Publish` existe únicamente en `Develop Delivery`. Los workflows de QA y PROD resuelven después ese candidato y cambian su referencia lógica sin modificar el contenido. En una implementación Docker, los tags `<versión>-dev`, `<versión>-rc` y `<versión>` apuntan al mismo digest. Para un ZIP, los ambientes referencian el mismo objeto y checksum. QA y PROD nunca reconstruyen ni vuelven a empaquetar.
 
 ### Grafo de dependencias acordado
 
@@ -22,11 +22,11 @@ Validate
                                                           │
                                     Continuar solo en push de develop
                                                           ↓
-                                                Package deployable artifact
+                                                       Package
                                                           ↓
-                                                 Scan packaged artifact
+                                                    Artifact scan
                                                           ↓
-                                               Publish immutable artifact
+                                                       Publish
                                                           ↓
                                             DEV ──> QA ──> PROD
 ```
@@ -42,7 +42,7 @@ Los Markdown no disparan CI en push porque no cambian la aplicación; en PR sí 
 | Control | Pregunta que responde | Resultado |
 |---|---|---|
 | Aprobación del Environment `qa` | ¿Se autoriza instalar este candidato en QA? | Deployment QA del digest seleccionado |
-| Smoke tests | ¿La aplicación desplegada está técnicamente saludable? | Evidencia automática para SHA y digest |
+| Verify deployment | ¿El artefacto correcto quedó desplegado y técnicamente saludable? | Evidencia automática de salud, SHA, versión y digest |
 | `QA sign-off` | ¿QA terminó las pruebas funcionales y acepta exactamente este candidato? | Gate manual visible para el HEAD y digest del PR release |
 | Merge `release/* → main` | ¿El código aprobado queda registrado como liberable? | Actualización protegida de `main`, sin rebuild |
 | Aprobación del Environment `prod` | ¿Se autoriza desplegar ahora en producción? | Deployment del digest aceptado por QA |
@@ -69,7 +69,7 @@ sequenceDiagram
     Dev->>PR: Crear release/* desde el SHA seleccionado
     PR->>Registry: Resolver digest X sin reconstruir
     PR->>QA: Solicitar aprobación y desplegar X
-    QA->>QA: Ejecutar smoke tests
+    QA->>QA: Verificar deployment y ejecutar acceptance tests
     Note over PR,QA: El PR permanece abierto durante las pruebas funcionales
     QA->>PR: QA sign-off para HEAD + digest X
     PR->>Main: Fusionar sin rebuild
@@ -122,4 +122,4 @@ Cada job de deployment genera un resumen con aplicación, Environment, branch, S
 - Concurrencia de CI cancela ejecuciones obsoletas de una misma referencia.
 - Ninguna credencial cloud ni permisos `write` son necesarios.
 
-La reducción de configuración duplicada proviene de `.github/actions/deploy/action.yml` y `.github/actions/smoke-test/action.yml`: los tres ambientes consumen contratos comunes para deployment y validación, pero los jobs y gates permanecen visibles en el grafo de Actions.
+La reducción de configuración duplicada proviene de `.github/actions/deploy/action.yml` y `.github/actions/verify-deployment/action.yml`: los tres ambientes consumen contratos comunes para deployment y verificación, pero los jobs y gates permanecen visibles en el grafo de Actions.

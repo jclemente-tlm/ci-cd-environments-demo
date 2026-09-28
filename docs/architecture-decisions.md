@@ -71,7 +71,7 @@ Referencias de los patrones comparados:
 10. Un sign-off exitoso habilita el merge del candidato en `main`; PROD solo puede iniciarse después de ese merge.
 11. DEV, QA y PROD deben recibir exactamente el mismo artefacto; CD no recompila.
 12. La trazabilidad mínima incluye versión, SHA, digest, run de CI, rama de origen y timestamp.
-13. Una aprobación manual no puede sustituir una validación QA fallida: PROD exige smoke evidence y sign-off funcional de QA para el mismo SHA y digest.
+13. Una aprobación manual no puede sustituir una verificación QA fallida: PROD exige evidencia técnica del deployment, acceptance tests y sign-off funcional para el mismo SHA y digest.
 14. `release/*` es inmutable. Un cambio de código durante QA rechaza el release; la corrección produce desde `develop` un SHA y digest nuevos e invalida toda evidencia anterior.
 15. Una rama temporal `release/*` fija el candidato, no representa un ambiente, no genera otra imagen por promoción y se elimina después del merge.
 16. Un check obligatorio valida las rutas de PR y exige que releases contengan el estado actual de `main`.
@@ -135,7 +135,7 @@ Por ello, `develop` no se conserva solamente por convención de Gitflow: represe
 
 CI restaura dependencias, compila y prueba en toda rama temporal. Build se ejecuta en paralelo con seguridad de código y validaciones de Dockerfile/IaC; calidad espera las pruebas y su cobertura. El empaquetado no se ejecuta en ramas temporales: comienza únicamente con el push de integración en `develop` y después de que todos los gates terminan correctamente. Luego se analiza el entregable final y solo un escaneo exitoso permite almacenar el artefacto inmutable. CD selecciona, descarga, configura, despliega y verifica ese artefacto sin recompilarlo ni volver a empaquetarlo.
 
-La palabra *publish* de .NET significa preparar los archivos desplegables; no significa publicarlos en un registro ni desplegarlos a un ambiente. Para evitar ambigüedad, las etapas se denominan **Package deployable artifact**, **Scan packaged artifact** y **Publish immutable artifact**. El formato puede ser una imagen, ZIP, paquete o conjunto de binarios; cada formato selecciona sus controles posteriores al empaquetado.
+La palabra *publish* de .NET significa preparar los archivos desplegables; no significa publicarlos en un registro ni desplegarlos a un ambiente. En el grafo, las etapas se denominan de forma concisa **Package**, **Artifact scan** y **Publish**; sus steps describen la operación técnica completa. El formato puede ser una imagen, ZIP, paquete o conjunto de binarios; cada formato selecciona sus controles posteriores al empaquetado.
 
 La separación se expresa mediante cuatro workflows visibles: `Continuous Integration`, `Develop Delivery`, `Release to QA` y `Production Deployment`. Esta división evita grafos llenos de jobs omitidos y conserva una dependencia fuerte: el sign-off habilita el merge y su evidencia debe validarse nuevamente antes de PROD. Los deployments y validaciones reutilizan acciones compuestas y conservan run, SHA, versión, rama y digest.
 

@@ -106,13 +106,13 @@ jobs:
           version: ${{ needs.resolve-release.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
 
-  production-smoke-tests:
-    name: Production smoke tests
+  verify-prod-deployment:
+    name: Verify PROD deployment
     needs: [resolve-release, deploy-prod]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/smoke-test
+      - uses: ./.github/actions/verify-deployment
         with:
           environment: prod
           artifact_run_id: ${{ needs.resolve-release.outputs.artifact_run_id }}

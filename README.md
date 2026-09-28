@@ -38,10 +38,10 @@ curl http://localhost:8080/environment
 
 ## Automatización
 
-La automatización actual es deliberadamente mínima: implementa build y pruebas unitarias reales, y simula los gates de calidad, seguridad y escaneo del artefacto. Solo después de que todos esos gates terminan correctamente genera el paquete desplegable, verifica su digest y permite publicarlo. La promoción y los smoke tests de QA reutilizan ese mismo paquete.
+La automatización actual es deliberadamente mínima: implementa build y pruebas unitarias reales, y simula los gates de calidad, seguridad y escaneo del artefacto. Solo después de que todos esos gates terminan correctamente genera el paquete desplegable, verifica su digest y permite publicarlo. Las verificaciones posteriores al deployment reutilizan ese mismo paquete.
 
 - `ci-cd-pipeline.yml` (`Continuous Integration`) muestra solamente los gates de ramas temporales. `develop-delivery.yml` construye, publica, despliega y valida DEV. `release-to-qa.yml` resuelve el candidato, despliega QA, ejecuta sus pruebas y espera `QA sign-off`. `production-deployment.yml` verifica esa aprobación antes de permitir PROD. Cada ejecución muestra únicamente las etapas que le corresponden.
-- `.github/actions/deploy/action.yml`: encapsula la descarga, verificación y simulación de despliegue. `.github/actions/smoke-test/action.yml` ejecuta después la validación compartida de DEV, QA y PROD como jobs visibles e independientes.
+- `.github/actions/deploy/action.yml`: encapsula la descarga, verificación y simulación de despliegue. `.github/actions/verify-deployment/action.yml` comprueba después identidad, integridad, salud y metadatos en DEV, QA y PROD como jobs visibles e independientes.
 - `.github/actions/resolve-candidate/action.yml`: resuelve automáticamente el run, versión y digest del candidato para evitar entradas técnicas manuales.
 
 La promoción no solicita run ID, SHA, versión ni nombre de artefacto. Son decisiones diferentes: el Environment `qa` autoriza instalar un candidato; `QA acceptance tests` valida el deployment; el Environment lógico `qa-signoff` registra que QA aceptó su HEAD y digest; el merge registra el código aprobado; y `prod` autoriza ejecutar el deployment productivo.
@@ -54,7 +54,7 @@ Después del deployment y las pruebas de QA, el job `QA sign-off` permanece visi
 
 Crear los Environments `dev`, `qa`, `qa-signoff` y `prod`. Definir el secret ficticio `DEMO_DEPLOY_TOKEN` solamente en los tres destinos de deployment. Configurar required reviewers en `qa`, `qa-signoff` y `prod`; `qa-signoff` es un gate lógico sin secrets. Ningún valor secreto se registra o se incluye en el artefacto.
 
-Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks de CI `Validate`, `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`. `Scan packaged artifact` se ejecuta después del merge en `develop`, no sobre ramas temporales. En `main`, exigir además `QA acceptance tests` y `QA sign-off`. Los detalles y comandos de demo están en:
+Configurar rulesets para impedir pushes directos a `main` y `develop`, exigir PR y los checks de CI `Validate`, `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`. `Artifact scan` se ejecuta después del merge en `develop`, no sobre ramas temporales. En `main`, exigir además `QA acceptance tests` y `QA sign-off`. Los detalles y comandos de demo están en:
 
 - [Estrategia de ramas](docs/branching-strategy.md)
 - [Decisiones de arquitectura](docs/architecture-decisions.md)

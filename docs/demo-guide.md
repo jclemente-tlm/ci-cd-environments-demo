@@ -21,7 +21,7 @@ git push -u origin feature/demo-change
 
 Primero, mostrar que el push ejecuta `Build and unit tests`, `Code quality`, `Security checks` y `Delivery checks`. La rama temporal termina después de esos gates: no empaqueta, no publica un candidato promovible y no despliega en ningún ambiente.
 
-Abrir PR `feature/demo-change → develop`, mostrar `Continuous Integration` y hacer merge. En Actions, abrir **Develop Delivery** y mostrar las validaciones, la creación del candidato, `Deploy DEV` y `Validate DEV`. El Summary debe indicar Environment, SHA, versión, digest y run de origen.
+Abrir PR `feature/demo-change → develop`, mostrar `Continuous Integration` y hacer merge. En Actions, abrir **Develop Delivery** y mostrar las validaciones, la creación del candidato, `Deploy DEV` y `Verify DEV deployment`. El Summary debe indicar Environment, SHA, versión, digest y run de origen.
 
 ## Escenario 2 — Promoción del mismo candidato a QA
 
@@ -38,7 +38,7 @@ Abrir el PR `release/v0.1.0-demo → main` con el título `release: v0.1.0-demo`
 
 Mostrar la ejecución de **Release to QA** iniciada por el PR. `Approve and deploy QA` espera la aprobación del Environment `qa`. Después de aprobar, localiza el artefacto creado previamente para el HEAD, verifica su identidad y lo despliega sin reconstruirlo.
 
-Abrir `QA acceptance tests` y mostrar los smoke tests de `/health`, `/environment`, `/version` y `/promotion`, además del artefacto de evidencia. Explicar que una falla genera diagnósticos e impide habilitar `QA sign-off`.
+Abrir `Verify QA deployment` y mostrar la comprobación de `/health`, `/environment`, `/version`, `/promotion`, identidad y digest. Después mostrar `QA acceptance tests` como suite funcional independiente. Una falla en cualquiera de los dos jobs impide habilitar `QA sign-off`.
 
 Abrir el Summary de QA y comparar su digest con DEV: debe ser idéntico. Después de las pruebas, `QA sign-off` queda esperando aprobación manual. Los pushes posteriores a `develop` actualizan DEV, pero nunca QA.
 
@@ -59,14 +59,14 @@ Explicar que el PR fija el código correspondiente al digest aunque `develop` ha
 3. Abrir `Resolve merged release` y `Verify QA sign-off`; comprobar que utilizan el SHA original del PR y que la evidencia coincide con el digest promovido.
 4. Mostrar `Approve and deploy PROD` esperando aprobación del Environment `prod`.
 5. Un reviewer distinto aprueba mediante **Review deployments → Approve and deploy**.
-6. Abrir `Production smoke tests` y comprobar que versión, SHA, digest y run coinciden con DEV y QA.
+6. Abrir `Verify PROD deployment` y comprobar que salud, versión, SHA, digest y run coinciden con DEV y QA.
 
 La descarga por nombre `candidate-<SHA>`, la validación del manifiesto y la igualdad del digest demuestran que PROD recibe el mismo binario validado, no una recompilación. En una implementación Docker, el equivalente es desplegar `repository@sha256:<digest>`.
 
 ## Escenario alternativo — QA fallido
 
-1. Provocar temporalmente una expectativa incorrecta en uno de los smoke tests o utilizar un candidato defectuoso controlado.
-2. Mostrar que el job QA falla y publica `qa-diagnostics-*`, pero no `qa-smoke-evidence-*`.
+1. Provocar temporalmente una expectativa incorrecta en `Verify QA deployment` o utilizar un candidato defectuoso controlado.
+2. Mostrar que el job QA falla y publica `qa-diagnostics-*`, pero no evidencia exitosa de deployment.
 3. Mostrar que el deployment QA requerido no queda exitoso y, por tanto, el PR no puede fusionarse ni iniciar PROD.
 4. Si es un defecto de código, corregirlo mediante una rama `fix/*` y PR hacia `develop`.
 5. Mostrar que se crea un candidato nuevo, se despliega primero en DEV y repite todo el ciclo.
