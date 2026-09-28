@@ -1,5 +1,5 @@
-name: Validate simulated deployment
-description: Descarga el candidato desplegado y ejecuta smoke tests contra sus metadatos sin reconstruirlo.
+name: Verify deployed candidate
+description: Comprueba identidad, integridad, salud y metadatos del candidato desplegado sin reconstruirlo.
 
 inputs:
   environment:
@@ -31,7 +31,7 @@ runs:
       uses: actions/download-artifact@v4
       with:
         name: ${{ inputs.artifact_name }}
-        path: smoke-artifact
+        path: deployed-artifact
         github-token: ${{ github.token }}
         run-id: ${{ inputs.artifact_run_id }}
     - name: Verify deployed candidate
@@ -41,15 +41,15 @@ runs:
         EXPECTED_SHA: ${{ inputs.commit_sha }}
         EXPECTED_VERSION: ${{ inputs.version }}
       run: |
-        test -f smoke-artifact/candidate.env
-        test -f smoke-artifact/checksums.sha256
-        ACTUAL_DIGEST="sha256:$(sha256sum smoke-artifact/checksums.sha256 | cut -d' ' -f1)"
+        test -f deployed-artifact/candidate.env
+        test -f deployed-artifact/checksums.sha256
+        ACTUAL_DIGEST="sha256:$(sha256sum deployed-artifact/checksums.sha256 | cut -d' ' -f1)"
         test "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST"
-        grep -Fxq "digest=$EXPECTED_DIGEST" smoke-artifact/candidate.env
-        grep -Fxq "source_sha=$EXPECTED_SHA" smoke-artifact/candidate.env
-        grep -Fxq "version=$EXPECTED_VERSION" smoke-artifact/candidate.env
-        (cd smoke-artifact/app && sha256sum --check ../checksums.sha256)
-    - name: Run smoke tests
+        grep -Fxq "digest=$EXPECTED_DIGEST" deployed-artifact/candidate.env
+        grep -Fxq "source_sha=$EXPECTED_SHA" deployed-artifact/candidate.env
+        grep -Fxq "version=$EXPECTED_VERSION" deployed-artifact/candidate.env
+        (cd deployed-artifact/app && sha256sum --check ../checksums.sha256)
+    - name: Verify deployment health and identity
       shell: bash
       env:
         APP_ENVIRONMENT: ${{ inputs.environment }}
@@ -63,7 +63,7 @@ runs:
           *) echo "::error::Ambiente de validación no permitido: $APP_ENVIRONMENT"; exit 1 ;;
         esac
 
-        ASPNETCORE_URLS=http://127.0.0.1:5088 dotnet smoke-artifact/app/Cicd.Demo.Api.dll > smoke-api.log 2>&1 &
+        ASPNETCORE_URLS=http://127.0.0.1:5088 dotnet deployed-artifact/app/Cicd.Demo.Api.dll > verification-api.log 2>&1 &
         API_PID=$!
         trap 'kill "$API_PID" 2>/dev/null || true' EXIT
 
@@ -97,22 +97,22 @@ runs:
           "version=$APP_VERSION" \
           "branch=$APP_BRANCH" \
           "digest=${{ inputs.artifact_digest }}" \
-          "ci_run=${{ inputs.artifact_run_id }}" > smoke-evidence.txt
-    - name: Record successful smoke evidence
+          "ci_run=${{ inputs.artifact_run_id }}" > deployment-evidence.txt
+    - name: Record successful deployment evidence
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ inputs.environment }}-smoke-evidence-${{ inputs.commit_sha }}-${{ github.run_id }}
-        path: smoke-evidence.txt
+        name: ${{ inputs.environment }}-deployment-evidence-${{ inputs.commit_sha }}-${{ github.run_id }}
+        path: deployment-evidence.txt
         if-no-files-found: error
         retention-days: 30
         overwrite: true
-    - name: Upload smoke diagnostics on failure
+    - name: Upload deployment diagnostics on failure
       if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: ${{ inputs.environment }}-diagnostics-${{ inputs.commit_sha }}-${{ github.run_id }}
         path: |
-          smoke-api.log
+          verification-api.log
           health.json
           environment.json
           version.json

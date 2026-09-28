@@ -181,13 +181,13 @@ jobs:
           version: ${{ needs.publish-artifact.outputs.version }}
           deploy_token: ${{ secrets.DEMO_DEPLOY_TOKEN }}
 
-  validate-dev:
-    name: Validate DEV
+  verify-dev-deployment:
+    name: Verify DEV deployment
     needs: [publish-artifact, deploy-dev]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/smoke-test
+      - uses: ./.github/actions/verify-deployment
         with:
           environment: dev
           artifact_run_id: ${{ needs.publish-artifact.outputs.artifact_run_id }}

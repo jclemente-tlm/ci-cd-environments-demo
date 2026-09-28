@@ -71,7 +71,7 @@ Referencias de los patrones comparados:
 10. Un sign-off exitoso habilita el merge del candidato en `main`; PROD solo puede iniciarse después de ese merge.
 11. DEV, QA y PROD deben recibir exactamente el mismo artefacto; CD no recompila.
 12. La trazabilidad mínima incluye versión, SHA, digest, run de CI, rama de origen y timestamp.
-13. Una aprobación manual no puede sustituir una validación QA fallida: PROD exige smoke evidence y sign-off funcional de QA para el mismo SHA y digest.
+13. Una aprobación manual no puede sustituir una verificación QA fallida: PROD exige evidencia técnica del deployment, acceptance tests y sign-off funcional para el mismo SHA y digest.
 14. `release/*` es inmutable. Un cambio de código durante QA rechaza el release; la corrección produce desde `develop` un SHA y digest nuevos e invalida toda evidencia anterior.
 15. Una rama temporal `release/*` fija el candidato, no representa un ambiente, no genera otra imagen por promoción y se elimina después del merge.
 16. Un check obligatorio valida las rutas de PR y exige que releases contengan el estado actual de `main`.
